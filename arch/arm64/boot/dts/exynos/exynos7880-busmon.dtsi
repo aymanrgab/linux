@@ -158,127 +158,127 @@
 		timeout {
 			#address-cells = <1>;
 			#size-cells = <1>;
-			timeout_pmu_ccore@0x106a021c {
+			timeout_pmu_ccore@106a021c {
 				nickname = "timeout-pmu-ccore-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <0>;
 			};
-			timeout_cmu_ccore@0x106a021c {
+			timeout_cmu_ccore@106a021c {
 				nickname = "timeout-cmu-ccore-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <1>;
 			};
-			timeout_sfrif_pmu_alive@0x106a021c {
+			timeout_sfrif_pmu_alive@106a021c {
 				nickname = "timeout-sfrif-pmu-alive-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <2>;
 			};
-			timeout_noc_d_nrtnd_ccorenp@0x106a021c {
+			timeout_noc_d_nrtnd_ccorenp@106a021c {
 				nickname = "timeout-noc-d-nrtnd-ccorenp-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <0>;
 				enable-bit = <3>;
 			};
-			timeout_noc_d_nrtnd@0x106a021c {
+			timeout_noc_d_nrtnd@106a021c {
 				nickname = "timeout-noc-d-nrtnd-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <0>;
 				enable-bit = <4>;
 			};
-			timeout_noc_d_rtnd@0x106a021c {
+			timeout_noc_d_rtnd@106a021c {
 				nickname = "timeout-noc-d-rtnd-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <0>;
 				enable-bit = <5>;
 			};
-			timeout_noc_d_cpnd_ccorenp@0x106a021c {
+			timeout_noc_d_cpnd_ccorenp@106a021c {
 				nickname = "timeout-noc-d-cpnd-ccorenp-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <0>;
 				enable-bit = <6>;
 			};
-			timeout_noc_d_cpnd@0x106a021c {
+			timeout_noc_d_cpnd@106a021c {
 				nickname = "timeout-noc-d-cpnd-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <0>;
 				enable-bit = <7>;
 			};
-			timeout_noc_p_peri@0x106a021c {
+			timeout_noc_p_peri@106a021c {
 				nickname = "timeout-noc-p-peri-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <8>;
 			};
-			timeout_noc_p_ccore@0x106a021c {
+			timeout_noc_p_ccore@106a021c {
 				nickname = "timeout-noc-p-ccore-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <9>;
 			};
-			timeout_noc_p_mfcmscl@0x106a021c {
+			timeout_noc_p_mfcmscl@106a021c {
 				nickname = "timeout-noc-p-mfcmscl-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <10>;
 			};
-			timeout_noc_p_isp@0x106a021c {
+			timeout_noc_p_isp@106a021c {
 				nickname = "timeout-noc-p-isp-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <11>;
 			};
-			timeout_noc_p_imem@0x106a021c {
+			timeout_noc_p_imem@106a021c {
 				nickname = "timeout-noc-p-imem-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <12>;
 			};
-			timeout_noc_p_g3d@0x106a021c {
+			timeout_noc_p_g3d@106a021c {
 				nickname = "timeout-noc-p-g3d-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <13>;
 			};
-			timeout_noc_p_fsys@0x106a021c {
+			timeout_noc_p_fsys@106a021c {
 				nickname = "timeout-noc-p-fsys-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <14>;
 			};
-			timeout_noc_p_dispaud@0x106a021c {
+			timeout_noc_p_dispaud@106a021c {
 				nickname = "timeout-noc-p-dispaud-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <15>;
 			};
-			timeout_noc_p_cpucl1@0x106a021c {
+			timeout_noc_p_cpucl1@106a021c {
 				nickname = "timeout-noc-p-cpucl1-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <16>;
 			};
-			timeout_noc_p_cpucl0@0x106a021c {
+			timeout_noc_p_cpucl0@106a021c {
 				nickname = "timeout-noc-p-cpucl0-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <17>;
 			};
-			timeout_noc_p_bus@0x106a021c {
+			timeout_noc_p_bus@106a021c {
 				nickname = "timeout-noc-p-bus-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <18>;
 			};
-			timeout_noc_p_mif1@0x106a021c {
+			timeout_noc_p_mif1@106a021c {
 				nickname = "timeout-noc-p-mif1-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;
 				enable-bit = <19>;
 			};
-			timeout_noc_p_mif0@0x106a021c {
+			timeout_noc_p_mif0@106a021c {
 				nickname = "timeout-noc-p-mif0-path";
 				reg = <0x106a021c 0x100>;
 				enabled = <1>;

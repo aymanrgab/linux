@@ -40,6 +40,30 @@ static const struct samsung_pin_bank_type exynos5433_bank_type_alive = {
 	.reg_offset = { 0x00, 0x04, 0x08, 0x0c, },
 };
 
+/* bank type for non-alive type (DRV bit field: 2) */
+static struct samsung_pin_bank_type bank_type_0  = {
+	.fld_width = { 4, 1, 2, 2, 2, 2, },
+	.reg_offset = { 0x00, 0x04, 0x08, 0x0c, 0x10, 0x14, },
+};
+
+/* bank type for alive type (DRV bit field: 2) */
+static struct samsung_pin_bank_type bank_type_1 = {
+	.fld_width = { 4, 1, 2, 2, },
+	.reg_offset = { 0x00, 0x04, 0x08, 0x0c, },
+};
+
+/* bank type for non-alive type (DRV bit field: 3) */
+static struct samsung_pin_bank_type bank_type_4  = {
+	.fld_width = { 4, 1, 2, 3, 2, 2, },
+	.reg_offset = { 0x00, 0x04, 0x08, 0x0c, 0x10, 0x14, },
+};
+
+/* bank type for alive type (DRV bit field: 3) */
+static struct samsung_pin_bank_type bank_type_5 = {
+	.fld_width = { 4, 1, 2, 3, },
+	.reg_offset = { 0x00, 0x04, 0x08, 0x0c, },
+};
+
 /*
  * Bank type for non-alive type. Bit fields:
  * CON: 4, DAT: 1, PUD: 4, DRV: 4, CONPDN: 2, PUDPDN: 4

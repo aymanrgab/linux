@@ -33,6 +33,14 @@
 				<0 51 4>,
 				<0 52 4>,
 				<0 53 4>;
+		interrupt-affinity = <&cpu4>,
+				<&cpu5>,
+				<&cpu6>,
+				<&cpu7>,
+				<&cpu0>,
+				<&cpu1>,
+				<&cpu2>,
+				<&cpu3>;
 	};
 
 	aliases {
@@ -90,7 +98,7 @@
 		#address-cells = <2>;
 		#size-cells = <0>;
 
-		cpu@0 {
+		cpu0: cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x0>;
@@ -98,7 +106,7 @@
 			enable-method = "psci";
 			cpu-idle-states = <&CPU_SLEEP_BOOT>;
 		};
-		cpu@1 {
+		cpu1: cpu@1 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x1>;
@@ -106,7 +114,7 @@
 			enable-method = "psci";
 			cpu-idle-states = <&CPU_SLEEP_BOOT>;
 		};
-		cpu@2 {
+		cpu2: cpu@2 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x2>;
@@ -114,7 +122,7 @@
 			enable-method = "psci";
 			cpu-idle-states = <&CPU_SLEEP_BOOT>;
 		};
-		cpu@3 {
+		cpu3: cpu@3 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x3>;
@@ -123,7 +131,7 @@
 			cpu-idle-states = <&CPU_SLEEP_BOOT>;
 		};
 
-		cpu@100 {
+		cpu4: cpu@100 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x100>;
@@ -131,7 +139,7 @@
 			enable-method = "psci";
 			cpu-idle-states = <&CPU_SLEEP_NONBOOT>;
 		};
-		cpu@101 {
+		cpu5: cpu@101 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x101>;
@@ -139,7 +147,7 @@
 			enable-method = "psci";
 			cpu-idle-states = <&CPU_SLEEP_NONBOOT>;
 		};
-		cpu@102 {
+		cpu6: cpu@102 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x102>;
@@ -147,7 +155,7 @@
 			enable-method = "psci";
 			cpu-idle-states = <&CPU_SLEEP_NONBOOT>;
 		};
-		cpu@103 {
+		cpu7: cpu@103 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53", "arm,armv8";
 			reg = <0x0 0x103>;
@@ -172,8 +180,8 @@
 				desc = "non-boot cluster cpu sleep";
 				compatible = "exynos,idle-state";
 				arm,psci-suspend-param = <0x0010000>;
-				entry-latency-us = <35>;
-				exit-latency-us = <90>;
+				entry-latency-us = <30>;
+				exit-latency-us = <75>;
 				min-residency-us = <750>;
 				status = "okay";
 			};
@@ -281,7 +289,7 @@
 		use-clocksource-only;
 	};
 
-	clock: clock-controller@0x10680000 {
+	clock: clock-controller@10680000 {
 		compatible = "samsung,exynos7880-clock";
 		reg = <0x0 0x10680000 0x1000>;
 		#clock-cells = <1>;
@@ -643,20 +651,20 @@
 		/* For CPUFREQ table */
 		/* CL0 */
 		cl0_idx_num = <17>;
-		cl0_max_support_idx = <1>;
-		cl0_min_support_idx = <15>;
-		cl0_boot_max_qos = <1872000>;
-		cl0_boot_min_qos = <1872000>;
+		cl0_max_support_idx = <0>;
+		cl0_min_support_idx = <16>;
+		cl0_boot_max_qos = <2002000>;
+		cl0_boot_min_qos = <2002000>;
 		cl0_boot_lock_time = <40000000>;
 		cl0_en_ema = <1>;
 		cl0_regulator = "BUCK1";
 
 		/* CL1 */
 		cl1_idx_num = <17>;
-		cl1_max_support_idx = <1>;
-		cl1_min_support_idx = <15>;
-		cl1_boot_max_qos = <1872000>;
-		cl1_boot_min_qos = <1872000>;
+		cl1_max_support_idx = <0>;
+		cl1_min_support_idx = <16>;
+		cl1_boot_max_qos = <2002000>;
+		cl1_boot_min_qos = <2002000>;
 		cl1_boot_lock_time = <40000000>;
 		cl1_en_ema = <1>;
 		cl1_regulator = "BUCK1";
@@ -1322,7 +1330,7 @@
 		compatible = "samsung,exynos5-mdev";
 	};
 
-	idma_g0: vpp@0x14821000{
+	idma_g0: vpp@14821000{
 		compatible = "samsung,exynos7-vpp";
 		#pb-id-cells = <6>;
 		reg = <0x0 0x14821000 0x1000>;
@@ -1330,7 +1338,7 @@
 		samsung,power-domain = <&spd_vpp0>;
 	};
 
-	idma_g1: vpp@0x14822000{
+	idma_g1: vpp@14822000{
 		compatible = "samsung,exynos7-vpp";
 		#pb-id-cells = <6>;
 		reg = <0x0 0x14822000 0x1000>;
@@ -1338,7 +1346,7 @@
 		samsung,power-domain = <&spd_vpp1>;
 	};
 
-	idma_g2: vpp@0x14823000{
+	idma_g2: vpp@14823000{
 		compatible = "samsung,exynos7-vpp";
 		#pb-id-cells = <6>;
 		reg = <0x0 0x14823000 0x1000>;
@@ -1346,7 +1354,7 @@
 		samsung,power-domain = <&spd_vpp2>;
 	};
 
-	idma_vg0: vpp@0x14824000{
+	idma_vg0: vpp@14824000{
 		compatible = "samsung,exynos7-vpp";
 		#pb-id-cells = <6>;
 		reg = <0x0 0x14824000 0x1000>;
@@ -1363,7 +1371,7 @@
 		#phy-cells = <1>;
 	};
 
-	dsim_0: dsim@0x14800000 {
+	dsim_0: dsim@14800000 {
 		compatible = "samsung,exynos8-mipi-dsi";
 		reg = <0x0 0x14800000 0x100>;
 		interrupts = <0 207 0>;
@@ -1379,7 +1387,7 @@
 		data_lane_cnt = <4>;
 	};
 
-	dsim_1: dsim@0x14810000 {
+	dsim_1: dsim@14810000 {
 		compatible = "samsung,exynos8-mipi-dsi";
 		reg = <0x0 0x14810000 0x100>;
 		interrupts = <0 210 0>;
@@ -1395,7 +1403,7 @@
 		data_lane_cnt = <4>;
 	};
 
-	decon_f: decon_f@0x14830000 {
+	decon_f: decon_f@14830000 {
 		compatible = "samsung,exynos8-decon_driver";
 		#pb-id-cells = <4>;
 
@@ -1445,7 +1453,7 @@
 		domain-clients = <&idma_g0>, <&idma_g1>, <&idma_g2>,
 			<&idma_vg0>;
 
-		sysmmu_disp: sysmmu@0x14860000 {
+		sysmmu_disp: sysmmu@14860000 {
 			compatible = "samsung,exynos7420-sysmmu";
 			reg = <0x0 0x14860000 0x1000>;
 			interrupts = <0 193 0>;
@@ -1473,7 +1481,7 @@
 
 		domain-clients = <&fimc_is>, <&fimc_is_sensor0>, <&fimc_is_sensor1>;
 
-		sysmmu_isp0: sysmmu@0x14470000 {
+		sysmmu_isp0: sysmmu@14470000 {
 			 compatible = "samsung,exynos7420-sysmmu";
 			 reg = <0x0 0x14470000 0x1000>;
 			 interrupts = <0 128 0>;
@@ -1496,7 +1504,7 @@
 			 };
 		 };
 
-		sysmmu_isp1: sysmmu@0x14490000 {
+		sysmmu_isp1: sysmmu@14490000 {
 			 compatible = "samsung,exynos7420-sysmmu";
 			 reg = <0x0 0x14490000 0x1000>;
 			 interrupts = <0 131 0>;
@@ -1516,7 +1524,7 @@
 			 };
 		};
 
-		sysmmu_isp2: sysmmu@0x144A0000 {
+		sysmmu_isp2: sysmmu@144A0000 {
 			 compatible = "samsung,exynos7420-sysmmu";
 			 reg = <0x0 0x144A0000 0x1000>;
 			 interrupts = <0 134 0>;

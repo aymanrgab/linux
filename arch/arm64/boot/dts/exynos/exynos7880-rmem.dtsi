@@ -22,7 +22,7 @@
 			reg = <0 0x45FFF000 0x1000>;
 		};
 
-		tima_mem: tima_region@0x52800000 {
+		tima_mem: tima_region@52800000 {
 			compatible = "removed-dma-pool";
 			reg = <0x0 0x52800000 0x200000>;
 		};
