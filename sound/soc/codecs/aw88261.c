@@ -10,6 +10,7 @@
 
 #include <linux/i2c.h>
 #include <linux/firmware.h>
+#include <linux/gpio/consumer.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <sound/soc.h>
@@ -712,6 +713,26 @@ static void aw88261_start(struct aw88261 *aw88261, bool sync_start)
 			AW88261_START_WORK_DELAY_MS);
 }
 
+static int aw88261_dai_set_sysclk(struct snd_soc_dai *dai, int clk_id,
+				  unsigned int freq, int dir)
+{
+	struct aw88261 *aw88261 = snd_soc_component_get_drvdata(dai->component);
+
+	aw88261->sysclk = freq;
+
+	return 0;
+}
+
+static int aw88261_dai_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
+{
+	return 0;
+}
+
+static const struct snd_soc_dai_ops aw88261_dai_ops = {
+	.set_sysclk = aw88261_dai_set_sysclk,
+	.set_fmt = aw88261_dai_set_fmt,
+};
+
 static struct snd_soc_dai_driver aw88261_dai[] = {
 	{
 		.name = "aw88261-aif",
@@ -719,17 +740,18 @@ static struct snd_soc_dai_driver aw88261_dai[] = {
 		.playback = {
 			.stream_name = "Speaker_Playback",
 			.channels_min = 1,
-			.channels_max = 2,
+			.channels_max = 1,
 			.rates = AW88261_RATES,
 			.formats = AW88261_FORMATS,
 		},
 		.capture = {
 			.stream_name = "Speaker_Capture",
 			.channels_min = 1,
-			.channels_max = 2,
+			.channels_max = 1,
 			.rates = AW88261_RATES,
 			.formats = AW88261_FORMATS,
 		},
+		.ops = &aw88261_dai_ops,
 	},
 };
 
@@ -1010,6 +1032,24 @@ static const struct snd_soc_dapm_route aw88261_audio_map[] = {
 	{"AIF_TX", NULL, "ADC Input"},
 };
 
+static char *aw88261_append_suffix(struct aw88261 *aw88261, const char *name)
+{
+	char *new_name;
+	int len;
+
+	if (!name)
+		return NULL;
+
+	len = strlen(name) + 8;
+	new_name = devm_kzalloc(aw88261->aw_pa->dev, len, GFP_KERNEL);
+	if (!new_name)
+		return (char *)name;
+
+	snprintf(new_name, len, "%s-ch%d", name, aw88261->aw_pa->channel);
+
+	return new_name;
+}
+
 static int aw88261_frcset_check(struct aw88261 *aw88261)
 {
 	unsigned int reg_val;
@@ -1140,7 +1180,10 @@ static int aw88261_codec_probe(struct snd_soc_component *component)
 {
 	struct snd_soc_dapm_context *dapm = snd_soc_component_to_dapm(component);
 	struct aw88261 *aw88261 = snd_soc_component_get_drvdata(component);
+	struct snd_kcontrol_new *controls_copy;
+	int num_controls = ARRAY_SIZE(aw88261_controls);
 	int ret;
+	int i;
 
 	INIT_DELAYED_WORK(&aw88261->start_work, aw88261_startup_work);
 
@@ -1161,8 +1204,17 @@ static int aw88261_codec_probe(struct snd_soc_component *component)
 	if (ret)
 		return ret;
 
-	ret = snd_soc_add_component_controls(component, aw88261_controls,
-							ARRAY_SIZE(aw88261_controls));
+	controls_copy = devm_kmemdup(component->dev, aw88261_controls,
+				     sizeof(aw88261_controls), GFP_KERNEL);
+	if (!controls_copy)
+		return -ENOMEM;
+
+	for (i = 0; i < num_controls; i++)
+		controls_copy[i].name =
+			aw88261_append_suffix(aw88261, controls_copy[i].name);
+
+	ret = snd_soc_add_component_controls(component, controls_copy,
+						     num_controls);
 
 	return ret;
 }
@@ -1179,6 +1231,14 @@ static const struct snd_soc_component_driver soc_codec_dev_aw88261 = {
 	.remove = aw88261_codec_remove,
 };
 
+static void aw88261_hw_reset(struct aw88261 *aw88261)
+{
+	gpiod_set_value_cansleep(aw88261->reset_gpio, 0);
+	usleep_range(AW88261_1000_US, AW88261_1000_US + 10);
+	gpiod_set_value_cansleep(aw88261->reset_gpio, 1);
+	usleep_range(AW88261_1000_US, AW88261_1000_US + 10);
+}
+
 static void aw88261_parse_channel_dt(struct aw88261 *aw88261)
 {
 	struct aw_device *aw_dev = aw88261->aw_pa;
@@ -1189,6 +1249,14 @@ static void aw88261_parse_channel_dt(struct aw88261 *aw88261)
 	aw88261->phase_sync = of_property_read_bool(np, "awinic,sync-flag");
 
 	aw_dev->channel = channel_value;
+}
+
+static void aw88261_parse_firmware_name_dt(struct aw88261 *aw88261)
+{
+	struct device_node *np = aw88261->aw_pa->dev->of_node;
+
+	if (of_property_read_string(np, "firmware-name", &aw88261->fw_name))
+		aw88261->fw_name = AW88261_ACF_FILE;
 }
 
 static int aw88261_init(struct aw88261 *aw88261, struct i2c_client *i2c, struct regmap *regmap)
@@ -1233,6 +1301,7 @@ static int aw88261_init(struct aw88261 *aw88261, struct i2c_client *i2c, struct 
 	aw_dev->volume_desc.ctl_volume = AW88261_VOL_DEFAULT_VALUE;
 	aw_dev->volume_desc.mute_volume = AW88261_MUTE_VOL;
 	aw88261_parse_channel_dt(aw88261);
+	aw88261_parse_firmware_name_dt(aw88261);
 
 	return ret;
 }
@@ -1252,6 +1321,14 @@ static int aw88261_i2c_probe(struct i2c_client *i2c)
 	mutex_init(&aw88261->lock);
 
 	i2c_set_clientdata(i2c, aw88261);
+
+	aw88261->reset_gpio =
+		devm_gpiod_get_optional(&i2c->dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(aw88261->reset_gpio))
+		return dev_err_probe(&i2c->dev, PTR_ERR(aw88261->reset_gpio),
+				     "failed to get reset gpio\n");
+	if (aw88261->reset_gpio)
+		aw88261_hw_reset(aw88261);
 
 	aw88261->regmap = devm_regmap_init_i2c(i2c, &aw88261_remap_config);
 	if (IS_ERR(aw88261->regmap)) {

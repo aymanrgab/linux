@@ -445,11 +445,13 @@ struct aw88261 {
 	struct delayed_work start_work;
 	struct regmap *regmap;
 	struct aw_container *aw_cfg;
+	const char *fw_name;
 
 	int efuse_check;
 	int frcset_en;
 	unsigned int mute_st;
 	unsigned int amppd_st;
+	unsigned int sysclk;
 
 	bool phase_sync;
 };
