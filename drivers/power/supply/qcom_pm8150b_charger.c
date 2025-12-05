@@ -489,9 +489,7 @@ static void smb5_update_charging_limit(struct smb5_chip *chip)
 	}
 
 	/* Try to find the fuel gauge (Battery) to read capacity */
-	fg_psy = power_supply_get_by_name("pm8150b-fg");
-	if (!fg_psy)
-		fg_psy = power_supply_get_by_name("battery");
+	fg_psy = power_supply_get_by_name("qcom-battery");
 	
 	if (!fg_psy) {
 		/* Fallback: If we can't find FG, we can't limit reliably. 
