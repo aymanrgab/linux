@@ -381,7 +381,7 @@ static void
 __nfulnl_flush(struct nfulnl_instance *inst)
 {
 	/* timer holds a reference */
-	if (del_timer(&inst->timer))
+	if (timer_delete(&inst->timer))
 		instance_put(inst);
 	if (inst->skb)
 		__nfulnl_send(inst);
@@ -390,7 +390,7 @@ __nfulnl_flush(struct nfulnl_instance *inst)
 static void
 nfulnl_timer(struct timer_list *t)
 {
-	struct nfulnl_instance *inst = from_timer(inst, t, timer);
+	struct nfulnl_instance *inst = timer_container_of(inst, t, timer);
 
 	spin_lock_bh(&inst->lock);
 	if (inst->skb)
@@ -508,7 +508,7 @@ __build_packet_message(struct nfnl_log_net *log,
 					 htonl(br_port_get_rcu(indev)->br->dev->ifindex)))
 				goto nla_put_failure;
 		} else {
-			struct net_device *physindev;
+			int physinif;
 
 			/* Case 2: indev is bridge group, we need to look for
 			 * physical device (when called from ipv4) */
@@ -516,10 +516,10 @@ __build_packet_message(struct nfnl_log_net *log,
 					 htonl(indev->ifindex)))
 				goto nla_put_failure;
 
-			physindev = nf_bridge_get_physindev(skb);
-			if (physindev &&
+			physinif = nf_bridge_get_physinif(skb);
+			if (physinif &&
 			    nla_put_be32(inst->skb, NFULA_IFINDEX_PHYSINDEV,
-					 htonl(physindev->ifindex)))
+					 htonl(physinif)))
 				goto nla_put_failure;
 		}
 #endif

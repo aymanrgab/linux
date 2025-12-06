@@ -7,6 +7,7 @@
 
 #include "linked_list.skel.h"
 #include "linked_list_fail.skel.h"
+#include "linked_list_peek.skel.h"
 
 static char log_buf[1024 * 1024];
 
@@ -65,13 +66,13 @@ static struct {
 	{ "map_compat_raw_tp", "tracing progs cannot use bpf_{list_head,rb_root} yet" },
 	{ "map_compat_raw_tp_w", "tracing progs cannot use bpf_{list_head,rb_root} yet" },
 	{ "obj_type_id_oor", "local type ID argument must be in range [0, U32_MAX]" },
-	{ "obj_new_no_composite", "bpf_obj_new type ID argument must be of a struct" },
-	{ "obj_new_no_struct", "bpf_obj_new type ID argument must be of a struct" },
+	{ "obj_new_no_composite", "bpf_obj_new/bpf_percpu_obj_new type ID argument must be of a struct" },
+	{ "obj_new_no_struct", "bpf_obj_new/bpf_percpu_obj_new type ID argument must be of a struct" },
 	{ "obj_drop_non_zero_off", "R1 must have zero offset when passed to release func" },
 	{ "new_null_ret", "R0 invalid mem access 'ptr_or_null_'" },
 	{ "obj_new_acq", "Unreleased reference id=" },
 	{ "use_after_drop", "invalid mem access 'scalar'" },
-	{ "ptr_walk_scalar", "type=scalar expected=percpu_ptr_" },
+	{ "ptr_walk_scalar", "type=rdonly_untrusted_mem expected=percpu_ptr_" },
 	{ "direct_read_lock", "direct access to bpf_spin_lock is disallowed" },
 	{ "direct_write_lock", "direct access to bpf_spin_lock is disallowed" },
 	{ "direct_read_head", "direct access to bpf_list_head is disallowed" },
@@ -94,14 +95,8 @@ static struct {
 	{ "incorrect_head_var_off2", "variable ptr_ access var_off=(0x0; 0xffffffff) disallowed" },
 	{ "incorrect_head_off1", "bpf_list_head not found at offset=25" },
 	{ "incorrect_head_off2", "bpf_list_head not found at offset=1" },
-	{ "pop_front_off",
-	  "15: (bf) r1 = r6                      ; R1_w=ptr_or_null_foo(id=4,ref_obj_id=4,off=48,imm=0) "
-	  "R6_w=ptr_or_null_foo(id=4,ref_obj_id=4,off=48,imm=0) refs=2,4\n"
-	  "16: (85) call bpf_this_cpu_ptr#154\nR1 type=ptr_or_null_ expected=percpu_ptr_" },
-	{ "pop_back_off",
-	  "15: (bf) r1 = r6                      ; R1_w=ptr_or_null_foo(id=4,ref_obj_id=4,off=48,imm=0) "
-	  "R6_w=ptr_or_null_foo(id=4,ref_obj_id=4,off=48,imm=0) refs=2,4\n"
-	  "16: (85) call bpf_this_cpu_ptr#154\nR1 type=ptr_or_null_ expected=percpu_ptr_" },
+	{ "pop_front_off", "off 48 doesn't point to 'struct bpf_spin_lock' that is at 40" },
+	{ "pop_back_off", "off 48 doesn't point to 'struct bpf_spin_lock' that is at 40" },
 };
 
 static void test_linked_list_fail_prog(const char *prog_name, const char *err_msg)
@@ -189,6 +184,18 @@ static void test_linked_list_success(int mode, bool leave_in_map)
 	if (!leave_in_map)
 		clear_fields(skel->maps.bss_A);
 
+	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.global_list_push_pop_nested), &opts);
+	ASSERT_OK(ret, "global_list_push_pop_nested");
+	ASSERT_OK(opts.retval, "global_list_push_pop_nested retval");
+	if (!leave_in_map)
+		clear_fields(skel->maps.bss_A);
+
+	ret = bpf_prog_test_run_opts(bpf_program__fd(skel->progs.global_list_array_push_pop), &opts);
+	ASSERT_OK(ret, "global_list_array_push_pop");
+	ASSERT_OK(opts.retval, "global_list_array_push_pop retval");
+	if (!leave_in_map)
+		clear_fields(skel->maps.bss_A);
+
 	if (mode == PUSH_POP)
 		goto end;
 
@@ -268,7 +275,7 @@ end:
 
 static void list_and_rb_node_same_struct(bool refcount_field)
 {
-	int bpf_rb_node_btf_id, bpf_refcount_btf_id, foo_btf_id;
+	int bpf_rb_node_btf_id, bpf_refcount_btf_id = 0, foo_btf_id;
 	struct btf *btf;
 	int id, err;
 
@@ -798,4 +805,9 @@ void test_linked_list(void)
 	test_linked_list_success(LIST_IN_LIST, false);
 	test_linked_list_success(LIST_IN_LIST, true);
 	test_linked_list_success(TEST_ALL, false);
+}
+
+void test_linked_list_peek(void)
+{
+	RUN_TESTS(linked_list_peek);
 }

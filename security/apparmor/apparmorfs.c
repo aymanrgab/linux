@@ -43,7 +43,7 @@
  * The interface is split into two main components based on their function
  * a securityfs component:
  *   used for static files that are always available, and which allows
- *   userspace to specificy the location of the security filesystem.
+ *   userspace to specify the location of the security filesystem.
  *
  *   fns and data are prefixed with
  *      aa_sfs_
@@ -204,7 +204,7 @@ static struct file_system_type aafs_ops = {
 /**
  * __aafs_setup_d_inode - basic inode setup for apparmorfs
  * @dir: parent directory for the dentry
- * @dentry: dentry we are seting the inode up for
+ * @dentry: dentry we are setting the inode up for
  * @mode: permissions the file should have
  * @data: data to store on inode.i_private, available in open()
  * @link: if symlink, symlink target string
@@ -226,7 +226,7 @@ static int __aafs_setup_d_inode(struct inode *dir, struct dentry *dentry,
 
 	inode->i_ino = get_next_ino();
 	inode->i_mode = mode;
-	inode->i_atime = inode->i_mtime = inode_set_ctime_current(inode);
+	simple_inode_init_ts(inode);
 	inode->i_private = data;
 	if (S_ISDIR(mode)) {
 		inode->i_op = iops ? iops : &simple_dir_inode_operations;
@@ -283,7 +283,7 @@ static struct dentry *aafs_create(const char *name, umode_t mode,
 	dir = d_inode(parent);
 
 	inode_lock(dir);
-	dentry = lookup_one_len(name, parent, strlen(name));
+	dentry = lookup_noperm(&QSTR(name), parent);
 	if (IS_ERR(dentry)) {
 		error = PTR_ERR(dentry);
 		goto fail_lock;
@@ -423,7 +423,7 @@ static ssize_t policy_update(u32 mask, const char __user *buf, size_t size,
 	/* high level check about policy management - fine grained in
 	 * below after unpack
 	 */
-	error = aa_may_manage_policy(label, ns, mask);
+	error = aa_may_manage_policy(current_cred(), label, ns, mask);
 	if (error)
 		goto end_section;
 
@@ -486,7 +486,8 @@ static ssize_t profile_remove(struct file *f, const char __user *buf,
 	/* high level check about policy management - fine grained in
 	 * below after unpack
 	 */
-	error = aa_may_manage_policy(label, ns, AA_MAY_REMOVE_POLICY);
+	error = aa_may_manage_policy(current_cred(), label, ns,
+				     AA_MAY_REMOVE_POLICY);
 	if (error)
 		goto out;
 
@@ -611,30 +612,38 @@ static const struct file_operations aa_fs_ns_revision_fops = {
 static void profile_query_cb(struct aa_profile *profile, struct aa_perms *perms,
 			     const char *match_str, size_t match_len)
 {
-	struct aa_ruleset *rules = list_first_entry(&profile->rules,
-						    typeof(*rules), list);
+	struct aa_ruleset *rules = profile->label.rules[0];
 	struct aa_perms tmp = { };
 	aa_state_t state = DFA_NOMATCH;
 
 	if (profile_unconfined(profile))
 		return;
-	if (rules->file.dfa && *match_str == AA_CLASS_FILE) {
-		state = aa_dfa_match_len(rules->file.dfa,
-					 rules->file.start[AA_CLASS_FILE],
+	if (rules->file->dfa && *match_str == AA_CLASS_FILE) {
+		state = aa_dfa_match_len(rules->file->dfa,
+					 rules->file->start[AA_CLASS_FILE],
 					 match_str + 1, match_len - 1);
 		if (state) {
 			struct path_cond cond = { };
 
-			tmp = *(aa_lookup_fperms(&(rules->file), state, &cond));
+			tmp = *(aa_lookup_condperms(current_fsuid(),
+						    rules->file, state, &cond));
 		}
-	} else if (rules->policy.dfa) {
+	} else if (rules->policy->dfa) {
 		if (!RULE_MEDIATES(rules, *match_str))
 			return;	/* no change to current perms */
-		state = aa_dfa_match_len(rules->policy.dfa,
-					 rules->policy.start[0],
+		/* old user space does not correctly detect dbus mediation
+		 * support so we may get dbus policy and requests when
+		 * the abi doesn't support it. This can cause mediation
+		 * regressions, so explicitly test for this situation.
+		 */
+		if (*match_str == AA_CLASS_DBUS &&
+		    !RULE_MEDIATES_v9NET(rules))
+			return; /* no change to current perms */
+		state = aa_dfa_match_len(rules->policy->dfa,
+					 rules->policy->start[0],
 					 match_str, match_len);
 		if (state)
-			tmp = *aa_lookup_perms(&rules->policy, state);
+			tmp = *aa_lookup_perms(rules->policy, state);
 	}
 	aa_apply_modes_to_perms(profile, &tmp);
 	aa_perms_accum_raw(perms, &tmp);
@@ -996,7 +1005,7 @@ static int aa_sfs_seq_show(struct seq_file *seq, void *v)
 
 	switch (fs_file->v_type) {
 	case AA_SFS_TYPE_BOOLEAN:
-		seq_printf(seq, "%s\n", fs_file->v.boolean ? "yes" : "no");
+		seq_printf(seq, "%s\n", str_yes_no(fs_file->v.boolean));
 		break;
 	case AA_SFS_TYPE_STRING:
 		seq_printf(seq, "%s\n", fs_file->v.string);
@@ -1005,7 +1014,7 @@ static int aa_sfs_seq_show(struct seq_file *seq, void *v)
 		seq_printf(seq, "%#08lx\n", fs_file->v.u64);
 		break;
 	default:
-		/* Ignore unpritable entry types. */
+		/* Ignore unprintable entry types. */
 		break;
 	}
 
@@ -1095,7 +1104,7 @@ static int seq_profile_attach_show(struct seq_file *seq, void *v)
 	struct aa_profile *profile = labels_profile(label);
 	if (profile->attach.xmatch_str)
 		seq_printf(seq, "%s\n", profile->attach.xmatch_str);
-	else if (profile->attach.xmatch.dfa)
+	else if (profile->attach.xmatch->dfa)
 		seq_puts(seq, "<unknown>\n");
 	else
 		seq_printf(seq, "%s\n", profile->base.name);
@@ -1151,7 +1160,7 @@ static int seq_ns_stacked_show(struct seq_file *seq, void *v)
 	struct aa_label *label;
 
 	label = begin_current_label_crit_section();
-	seq_printf(seq, "%s\n", label->size > 1 ? "yes" : "no");
+	seq_printf(seq, "%s\n", str_yes_no(label->size > 1));
 	end_current_label_crit_section(label);
 
 	return 0;
@@ -1174,7 +1183,7 @@ static int seq_ns_nsstacked_show(struct seq_file *seq, void *v)
 			}
 	}
 
-	seq_printf(seq, "%s\n", count > 1 ? "yes" : "no");
+	seq_printf(seq, "%s\n", str_yes_no(count > 1));
 	end_current_label_crit_section(label);
 
 	return 0;
@@ -1314,7 +1323,6 @@ SEQ_RAWDATA_FOPS(compressed_size);
 
 static int decompress_zstd(char *src, size_t slen, char *dst, size_t dlen)
 {
-#ifdef CONFIG_SECURITY_APPARMOR_EXPORT_BINARY
 	if (slen < dlen) {
 		const size_t wksp_len = zstd_dctx_workspace_bound();
 		zstd_dctx *ctx;
@@ -1341,7 +1349,6 @@ cleanup:
 		kvfree(wksp);
 		return ret;
 	}
-#endif
 
 	if (dlen < slen)
 		return -EINVAL;
@@ -1475,7 +1482,7 @@ int __aa_fs_create_rawdata(struct aa_ns *ns, struct aa_loaddata *rawdata)
 	rawdata->dents[AAFS_LOADDATA_REVISION] = dent;
 
 	if (aa_g_hash_policy) {
-		dent = aafs_create_file("sha1", S_IFREG | 0444, dir,
+		dent = aafs_create_file("sha256", S_IFREG | 0444, dir,
 					      rawdata, &seq_rawdata_hash_fops);
 		if (IS_ERR(dent))
 			goto fail;
@@ -1557,7 +1564,8 @@ void __aafs_profile_migrate_dents(struct aa_profile *old,
 		if (new->dents[i]) {
 			struct inode *inode = d_inode(new->dents[i]);
 
-			inode->i_mtime = inode_set_ctime_current(inode);
+			inode_set_mtime_to_ts(inode,
+					      inode_set_ctime_current(inode));
 		}
 		old->dents[i] = NULL;
 	}
@@ -1615,11 +1623,6 @@ static char *gen_symlink_name(int depth, const char *dirname, const char *fname)
 	return buffer;
 }
 
-static void rawdata_link_cb(void *arg)
-{
-	kfree(arg);
-}
-
 static const char *rawdata_get_link_base(struct dentry *dentry,
 					 struct inode *inode,
 					 struct delayed_call *done,
@@ -1643,16 +1646,16 @@ static const char *rawdata_get_link_base(struct dentry *dentry,
 	if (IS_ERR(target))
 		return target;
 
-	set_delayed_call(done, rawdata_link_cb, target);
+	set_delayed_call(done, kfree_link, target);
 
 	return target;
 }
 
-static const char *rawdata_get_link_sha1(struct dentry *dentry,
+static const char *rawdata_get_link_sha256(struct dentry *dentry,
 					 struct inode *inode,
 					 struct delayed_call *done)
 {
-	return rawdata_get_link_base(dentry, inode, done, "sha1");
+	return rawdata_get_link_base(dentry, inode, done, "sha256");
 }
 
 static const char *rawdata_get_link_abi(struct dentry *dentry,
@@ -1669,8 +1672,8 @@ static const char *rawdata_get_link_data(struct dentry *dentry,
 	return rawdata_get_link_base(dentry, inode, done, "raw_data");
 }
 
-static const struct inode_operations rawdata_link_sha1_iops = {
-	.get_link	= rawdata_get_link_sha1,
+static const struct inode_operations rawdata_link_sha256_iops = {
+	.get_link	= rawdata_get_link_sha256,
 };
 
 static const struct inode_operations rawdata_link_abi_iops = {
@@ -1697,6 +1700,10 @@ int __aafs_profile_mkdir(struct aa_profile *profile, struct dentry *parent)
 		struct aa_profile *p;
 		p = aa_deref_parent(profile);
 		dent = prof_dir(p);
+		if (!dent) {
+			error = -ENOENT;
+			goto fail2;
+		}
 		/* adding to parent that previously didn't have children */
 		dent = aafs_create_dir("profiles", dent);
 		if (IS_ERR(dent))
@@ -1743,7 +1750,7 @@ int __aafs_profile_mkdir(struct aa_profile *profile, struct dentry *parent)
 	profile->dents[AAFS_PROF_ATTACH] = dent;
 
 	if (profile->hash) {
-		dent = create_profile_file(dir, "sha1", profile,
+		dent = create_profile_file(dir, "sha256", profile,
 					   &seq_profile_hash_fops);
 		if (IS_ERR(dent))
 			goto fail;
@@ -1753,9 +1760,9 @@ int __aafs_profile_mkdir(struct aa_profile *profile, struct dentry *parent)
 #ifdef CONFIG_SECURITY_APPARMOR_EXPORT_BINARY
 	if (profile->rawdata) {
 		if (aa_g_hash_policy) {
-			dent = aafs_create("raw_sha1", S_IFLNK | 0444, dir,
+			dent = aafs_create("raw_sha256", S_IFLNK | 0444, dir,
 					   profile->label.proxy, NULL, NULL,
-					   &rawdata_link_sha1_iops);
+					   &rawdata_link_sha256_iops);
 			if (IS_ERR(dent))
 				goto fail;
 			aa_get_proxy(profile->label.proxy);
@@ -1796,8 +1803,8 @@ fail2:
 	return error;
 }
 
-static int ns_mkdir_op(struct mnt_idmap *idmap, struct inode *dir,
-		       struct dentry *dentry, umode_t mode)
+static struct dentry *ns_mkdir_op(struct mnt_idmap *idmap, struct inode *dir,
+				  struct dentry *dentry, umode_t mode)
 {
 	struct aa_ns *ns, *parent;
 	/* TODO: improve permission check */
@@ -1805,10 +1812,11 @@ static int ns_mkdir_op(struct mnt_idmap *idmap, struct inode *dir,
 	int error;
 
 	label = begin_current_label_crit_section();
-	error = aa_may_manage_policy(label, NULL, AA_MAY_LOAD_POLICY);
+	error = aa_may_manage_policy(current_cred(), label, NULL,
+				     AA_MAY_LOAD_POLICY);
 	end_current_label_crit_section(label);
 	if (error)
-		return error;
+		return ERR_PTR(error);
 
 	parent = aa_get_ns(dir->i_private);
 	AA_BUG(d_inode(ns_subns_dir(parent)) != dir);
@@ -1843,7 +1851,7 @@ out:
 	mutex_unlock(&parent->lock);
 	aa_put_ns(parent);
 
-	return error;
+	return ERR_PTR(error);
 }
 
 static int ns_rmdir_op(struct inode *dir, struct dentry *dentry)
@@ -1854,7 +1862,8 @@ static int ns_rmdir_op(struct inode *dir, struct dentry *dentry)
 	int error;
 
 	label = begin_current_label_crit_section();
-	error = aa_may_manage_policy(label, NULL, AA_MAY_LOAD_POLICY);
+	error = aa_may_manage_policy(current_cred(), label, NULL,
+				     AA_MAY_LOAD_POLICY);
 	end_current_label_crit_section(label);
 	if (error)
 		return error;
@@ -2243,7 +2252,7 @@ static void *p_next(struct seq_file *f, void *p, loff_t *pos)
 /**
  * p_stop - stop depth first traversal
  * @f: seq_file we are filling
- * @p: the last profile writen
+ * @p: the last profile written
  *
  * Release all locking done by p_start/p_next on namespace tree
  */
@@ -2331,6 +2340,7 @@ static struct aa_sfs_entry aa_sfs_entry_attach[] = {
 static struct aa_sfs_entry aa_sfs_entry_domain[] = {
 	AA_SFS_FILE_BOOLEAN("change_hat",	1),
 	AA_SFS_FILE_BOOLEAN("change_hatv",	1),
+	AA_SFS_FILE_BOOLEAN("unconfined_allowed_children",	1),
 	AA_SFS_FILE_BOOLEAN("change_onexec",	1),
 	AA_SFS_FILE_BOOLEAN("change_profile",	1),
 	AA_SFS_FILE_BOOLEAN("stack",		1),
@@ -2338,7 +2348,14 @@ static struct aa_sfs_entry aa_sfs_entry_domain[] = {
 	AA_SFS_FILE_BOOLEAN("post_nnp_subset",	1),
 	AA_SFS_FILE_BOOLEAN("computed_longest_left",	1),
 	AA_SFS_DIR("attach_conditions",		aa_sfs_entry_attach),
+	AA_SFS_FILE_BOOLEAN("disconnected.path",            1),
+	AA_SFS_FILE_BOOLEAN("kill.signal",		1),
 	AA_SFS_FILE_STRING("version", "1.2"),
+	{ }
+};
+
+static struct aa_sfs_entry aa_sfs_entry_unconfined[] = {
+	AA_SFS_FILE_BOOLEAN("change_profile", 1),
 	{ }
 };
 
@@ -2351,22 +2368,34 @@ static struct aa_sfs_entry aa_sfs_entry_versions[] = {
 	{ }
 };
 
+#define PERMS32STR "allow deny subtree cond kill complain prompt audit quiet hide xindex tag label"
 static struct aa_sfs_entry aa_sfs_entry_policy[] = {
 	AA_SFS_DIR("versions",			aa_sfs_entry_versions),
 	AA_SFS_FILE_BOOLEAN("set_load",		1),
 	/* number of out of band transitions supported */
 	AA_SFS_FILE_U64("outofband",		MAX_OOB_SUPPORTED),
+	AA_SFS_FILE_U64("permstable32_version",	3),
+	AA_SFS_FILE_STRING("permstable32", PERMS32STR),
+	AA_SFS_FILE_U64("state32",	1),
+	AA_SFS_DIR("unconfined_restrictions",   aa_sfs_entry_unconfined),
 	{ }
 };
 
 static struct aa_sfs_entry aa_sfs_entry_mount[] = {
 	AA_SFS_FILE_STRING("mask", "mount umount pivot_root"),
+	AA_SFS_FILE_STRING("move_mount", "detached"),
 	{ }
 };
 
 static struct aa_sfs_entry aa_sfs_entry_ns[] = {
 	AA_SFS_FILE_BOOLEAN("profile",		1),
 	AA_SFS_FILE_BOOLEAN("pivot_root",	0),
+	AA_SFS_FILE_STRING("mask", "userns_create"),
+	{ }
+};
+
+static struct aa_sfs_entry aa_sfs_entry_dbus[] = {
+	AA_SFS_FILE_STRING("mask", "acquire send receive"),
 	{ }
 };
 
@@ -2381,11 +2410,18 @@ static struct aa_sfs_entry aa_sfs_entry_query[] = {
 	AA_SFS_DIR("label",			aa_sfs_entry_query_label),
 	{ }
 };
+
+static struct aa_sfs_entry aa_sfs_entry_io_uring[] = {
+	AA_SFS_FILE_STRING("mask", "sqpoll override_creds"),
+	{ }
+};
+
 static struct aa_sfs_entry aa_sfs_entry_features[] = {
 	AA_SFS_DIR("policy",			aa_sfs_entry_policy),
 	AA_SFS_DIR("domain",			aa_sfs_entry_domain),
 	AA_SFS_DIR("file",			aa_sfs_entry_file),
 	AA_SFS_DIR("network_v8",		aa_sfs_entry_network),
+	AA_SFS_DIR("network_v9",		aa_sfs_entry_networkv9),
 	AA_SFS_DIR("mount",			aa_sfs_entry_mount),
 	AA_SFS_DIR("namespaces",		aa_sfs_entry_ns),
 	AA_SFS_FILE_U64("capability",		VFS_CAP_FLAGS_MASK),
@@ -2393,7 +2429,9 @@ static struct aa_sfs_entry aa_sfs_entry_features[] = {
 	AA_SFS_DIR("caps",			aa_sfs_entry_caps),
 	AA_SFS_DIR("ptrace",			aa_sfs_entry_ptrace),
 	AA_SFS_DIR("signal",			aa_sfs_entry_signal),
+	AA_SFS_DIR("dbus",			aa_sfs_entry_dbus),
 	AA_SFS_DIR("query",			aa_sfs_entry_query),
+	AA_SFS_DIR("io_uring",			aa_sfs_entry_io_uring),
 	{ }
 };
 
@@ -2530,7 +2568,7 @@ static int aa_mk_null_file(struct dentry *parent)
 		return error;
 
 	inode_lock(d_inode(parent));
-	dentry = lookup_one_len(NULL_FILE_NAME, parent, strlen(NULL_FILE_NAME));
+	dentry = lookup_noperm(&QSTR(NULL_FILE_NAME), parent);
 	if (IS_ERR(dentry)) {
 		error = PTR_ERR(dentry);
 		goto out;
@@ -2543,7 +2581,7 @@ static int aa_mk_null_file(struct dentry *parent)
 
 	inode->i_ino = get_next_ino();
 	inode->i_mode = S_IFCHR | S_IRUGO | S_IWUGO;
-	inode->i_atime = inode->i_mtime = inode_set_ctime_current(inode);
+	simple_inode_init_ts(inode);
 	init_special_inode(inode, S_IFCHR | S_IRUGO | S_IWUGO,
 			   MKDEV(MEM_MAJOR, 3));
 	d_instantiate(dentry, inode);
@@ -2591,7 +2629,7 @@ static int policy_readlink(struct dentry *dentry, char __user *buffer,
 	res = snprintf(name, sizeof(name), "%s:[%lu]", AAFS_NAME,
 		       d_inode(dentry)->i_ino);
 	if (res > 0 && res < sizeof(name))
-		res = readlink_copy(buffer, buflen, name);
+		res = readlink_copy(buffer, buflen, name, strlen(name));
 	else
 		res = -ENOENT;
 

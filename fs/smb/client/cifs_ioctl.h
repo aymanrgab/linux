@@ -26,6 +26,11 @@ struct smb_mnt_fs_info {
 	__u64   cifs_posix_caps;
 } __packed;
 
+struct smb_mnt_tcon_info {
+	__u32	tid;
+	__u64	session_id;
+} __packed;
+
 struct smb_snapshot_array {
 	__u32	number_of_snapshots;
 	__u32	number_of_snapshots_returned;
@@ -56,7 +61,7 @@ struct smb_query_info {
 struct smb3_key_debug_info {
 	__u64	Suid;
 	__u16	cipher_type;
-	__u8	auth_key[16]; /* SMB2_NTLMV2_SESSKEY_SIZE */
+	__u8	auth_key[SMB2_NTLMV2_SESSKEY_SIZE];
 	__u8	smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8	smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
 } __packed;
@@ -108,6 +113,7 @@ struct smb3_notify_info {
 #define CIFS_IOC_NOTIFY _IOW(CIFS_IOCTL_MAGIC, 9, struct smb3_notify)
 #define CIFS_DUMP_FULL_KEY _IOWR(CIFS_IOCTL_MAGIC, 10, struct smb3_full_key_debug_info)
 #define CIFS_IOC_NOTIFY_INFO _IOWR(CIFS_IOCTL_MAGIC, 11, struct smb3_notify_info)
+#define CIFS_IOC_GET_TCON_INFO _IOR(CIFS_IOCTL_MAGIC, 12, struct smb_mnt_tcon_info)
 #define CIFS_IOC_SHUTDOWN _IOR('X', 125, __u32)
 
 /*

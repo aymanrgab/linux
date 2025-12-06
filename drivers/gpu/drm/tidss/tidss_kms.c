@@ -4,8 +4,6 @@
  * Author: Tomi Valkeinen <tomi.valkeinen@ti.com>
  */
 
-#include <linux/dma-fence.h>
-
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_bridge.h>
@@ -25,18 +23,16 @@ static void tidss_atomic_commit_tail(struct drm_atomic_state *old_state)
 {
 	struct drm_device *ddev = old_state->dev;
 	struct tidss_device *tidss = to_tidss(ddev);
-	bool fence_cookie = dma_fence_begin_signalling();
 
 	dev_dbg(ddev->dev, "%s\n", __func__);
 
 	tidss_runtime_get(tidss);
 
 	drm_atomic_helper_commit_modeset_disables(ddev, old_state);
-	drm_atomic_helper_commit_planes(ddev, old_state, 0);
+	drm_atomic_helper_commit_planes(ddev, old_state, DRM_PLANE_COMMIT_ACTIVE_ONLY);
 	drm_atomic_helper_commit_modeset_enables(ddev, old_state);
 
 	drm_atomic_helper_commit_hw_done(old_state);
-	dma_fence_end_signalling(fence_cookie);
 	drm_atomic_helper_wait_for_flip_done(ddev, old_state);
 
 	drm_atomic_helper_cleanup_planes(ddev, old_state);
@@ -119,7 +115,7 @@ static int tidss_dispc_modeset_init(struct tidss_device *tidss)
 
 	const struct dispc_features *feat = tidss->feat;
 	u32 max_vps = feat->num_vps;
-	u32 max_planes = feat->num_planes;
+	u32 max_planes = feat->num_vids;
 
 	struct pipe pipes[TIDSS_MAX_PORTS];
 	u32 num_pipes = 0;
@@ -139,8 +135,7 @@ static int tidss_dispc_modeset_init(struct tidss_device *tidss)
 			dev_dbg(dev, "no panel/bridge for port %d\n", i);
 			continue;
 		} else if (ret) {
-			dev_dbg(dev, "port %d probe returned %d\n", i, ret);
-			return ret;
+			return dev_err_probe(dev, ret, "port %d probe failed\n", i);
 		}
 
 		if (panel) {
@@ -149,7 +144,7 @@ static int tidss_dispc_modeset_init(struct tidss_device *tidss)
 			dev_dbg(dev, "Setting up panel for port %d\n", i);
 
 			switch (feat->vp_bus_type[i]) {
-			case DISPC_VP_OLDI:
+			case DISPC_VP_OLDI_AM65X:
 				enc_type = DRM_MODE_ENCODER_LVDS;
 				conn_type = DRM_MODE_CONNECTOR_LVDS;
 				break;

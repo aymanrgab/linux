@@ -7,9 +7,12 @@
 #include <linux/slab.h>
 #include <linux/uacce.h>
 
-static struct class *uacce_class;
 static dev_t uacce_devt;
 static DEFINE_XARRAY_ALLOC(uacce_xa);
+
+static const struct class uacce_class = {
+	.name = UACCE_NAME,
+};
 
 /*
  * If the parent driver or the device disappears, the queue state is invalid and
@@ -462,40 +465,6 @@ static void uacce_release(struct device *dev)
 	kfree(uacce);
 }
 
-static unsigned int uacce_enable_sva(struct device *parent, unsigned int flags)
-{
-	int ret;
-
-	if (!(flags & UACCE_DEV_SVA))
-		return flags;
-
-	flags &= ~UACCE_DEV_SVA;
-
-	ret = iommu_dev_enable_feature(parent, IOMMU_DEV_FEAT_IOPF);
-	if (ret) {
-		dev_err(parent, "failed to enable IOPF feature! ret = %pe\n", ERR_PTR(ret));
-		return flags;
-	}
-
-	ret = iommu_dev_enable_feature(parent, IOMMU_DEV_FEAT_SVA);
-	if (ret) {
-		dev_err(parent, "failed to enable SVA feature! ret = %pe\n", ERR_PTR(ret));
-		iommu_dev_disable_feature(parent, IOMMU_DEV_FEAT_IOPF);
-		return flags;
-	}
-
-	return flags | UACCE_DEV_SVA;
-}
-
-static void uacce_disable_sva(struct uacce_device *uacce)
-{
-	if (!(uacce->flags & UACCE_DEV_SVA))
-		return;
-
-	iommu_dev_disable_feature(uacce->parent, IOMMU_DEV_FEAT_SVA);
-	iommu_dev_disable_feature(uacce->parent, IOMMU_DEV_FEAT_IOPF);
-}
-
 /**
  * uacce_alloc() - alloc an accelerator
  * @parent: pointer of uacce parent device
@@ -515,8 +484,6 @@ struct uacce_device *uacce_alloc(struct device *parent,
 	if (!uacce)
 		return ERR_PTR(-ENOMEM);
 
-	flags = uacce_enable_sva(parent, flags);
-
 	uacce->parent = parent;
 	uacce->flags = flags;
 	uacce->ops = interface->ops;
@@ -530,7 +497,7 @@ struct uacce_device *uacce_alloc(struct device *parent,
 	mutex_init(&uacce->mutex);
 	device_initialize(&uacce->dev);
 	uacce->dev.devt = MKDEV(MAJOR(uacce_devt), uacce->dev_id);
-	uacce->dev.class = uacce_class;
+	uacce->dev.class = &uacce_class;
 	uacce->dev.groups = uacce_dev_groups;
 	uacce->dev.parent = uacce->parent;
 	uacce->dev.release = uacce_release;
@@ -539,7 +506,6 @@ struct uacce_device *uacce_alloc(struct device *parent,
 	return uacce;
 
 err_with_uacce:
-	uacce_disable_sva(uacce);
 	kfree(uacce);
 	return ERR_PTR(ret);
 }
@@ -602,9 +568,6 @@ void uacce_remove(struct uacce_device *uacce)
 		unmap_mapping_range(q->mapping, 0, 0, 1);
 	}
 
-	/* disable sva now since no opened queues */
-	uacce_disable_sva(uacce);
-
 	if (uacce->cdev)
 		cdev_device_del(uacce->cdev, &uacce->dev);
 	xa_erase(&uacce_xa, uacce->dev_id);
@@ -623,13 +586,13 @@ static int __init uacce_init(void)
 {
 	int ret;
 
-	uacce_class = class_create(UACCE_NAME);
-	if (IS_ERR(uacce_class))
-		return PTR_ERR(uacce_class);
+	ret = class_register(&uacce_class);
+	if (ret)
+		return ret;
 
 	ret = alloc_chrdev_region(&uacce_devt, 0, MINORMASK, UACCE_NAME);
 	if (ret)
-		class_destroy(uacce_class);
+		class_unregister(&uacce_class);
 
 	return ret;
 }
@@ -637,7 +600,7 @@ static int __init uacce_init(void)
 static __exit void uacce_exit(void)
 {
 	unregister_chrdev_region(uacce_devt, MINORMASK);
-	class_destroy(uacce_class);
+	class_unregister(&uacce_class);
 }
 
 subsys_initcall(uacce_init);

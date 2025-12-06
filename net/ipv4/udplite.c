@@ -21,7 +21,6 @@ EXPORT_SYMBOL(udplite_table);
 static int udplite_sk_init(struct sock *sk)
 {
 	udp_init_sock(sk);
-	udp_sk(sk)->pcflag = UDPLITE_BIT;
 	pr_warn_once("UDP-Lite is deprecated and scheduled to be removed in 2025, "
 		     "please contact the netdev mailing list\n");
 	return 0;
@@ -61,7 +60,7 @@ struct proto 	udplite_prot = {
 	.rehash		   = udp_v4_rehash,
 	.get_port	   = udp_v4_get_port,
 
-	.memory_allocated  = &udp_memory_allocated,
+	.memory_allocated  = &net_aligned_data.udp_memory_allocated,
 	.per_cpu_fw_alloc  = &udp_memory_per_cpu_fw_alloc,
 
 	.sysctl_mem	   = sysctl_udp_mem,

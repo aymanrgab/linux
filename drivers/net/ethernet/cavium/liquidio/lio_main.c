@@ -92,12 +92,6 @@ static int octeon_console_debug_enabled(u32 console)
 /* time to wait for possible in-flight requests in milliseconds */
 #define WAIT_INFLIGHT_REQUEST	msecs_to_jiffies(1000)
 
-struct oct_link_status_resp {
-	u64 rh;
-	struct oct_link_info link_info;
-	u64 status;
-};
-
 struct oct_timestamp_resp {
 	u64 rh;
 	u64 timestamp;
@@ -532,7 +526,8 @@ static inline int setup_link_status_change_wq(struct net_device *netdev)
 	struct octeon_device *oct = lio->oct_dev;
 
 	lio->link_status_wq.wq = alloc_workqueue("link-status",
-						 WQ_MEM_RECLAIM, 0);
+						 WQ_MEM_RECLAIM | WQ_PERCPU,
+						 0);
 	if (!lio->link_status_wq.wq) {
 		dev_err(&oct->pci_dev->dev, "unable to create cavium link status wq\n");
 		return -1;
@@ -665,7 +660,8 @@ static inline int setup_sync_octeon_time_wq(struct net_device *netdev)
 	struct octeon_device *oct = lio->oct_dev;
 
 	lio->sync_octeon_time_wq.wq =
-		alloc_workqueue("update-octeon-time", WQ_MEM_RECLAIM, 0);
+		alloc_workqueue("update-octeon-time",
+				WQ_MEM_RECLAIM | WQ_PERCPU, 0);
 	if (!lio->sync_octeon_time_wq.wq) {
 		dev_err(&oct->pci_dev->dev, "Unable to create wq to update octeon time\n");
 		return -1;
@@ -1689,7 +1685,7 @@ static int load_firmware(struct octeon_device *oct)
 
 	if (fw_type_is_auto()) {
 		tmp_fw_type = LIO_FW_NAME_TYPE_NIC;
-		strncpy(fw_type, tmp_fw_type, sizeof(fw_type));
+		strscpy_pad(fw_type, tmp_fw_type, sizeof(fw_type));
 	} else {
 		tmp_fw_type = fw_type;
 	}
@@ -1740,7 +1736,7 @@ static inline int setup_tx_poll_fn(struct net_device *netdev)
 	struct octeon_device *oct = lio->oct_dev;
 
 	lio->txq_status_wq.wq = alloc_workqueue("txq-status",
-						WQ_MEM_RECLAIM, 0);
+						WQ_MEM_RECLAIM | WQ_PERCPU, 0);
 	if (!lio->txq_status_wq.wq) {
 		dev_err(&oct->pci_dev->dev, "unable to create cavium txq status wq\n");
 		return -1;

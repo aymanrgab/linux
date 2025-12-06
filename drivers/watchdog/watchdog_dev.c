@@ -1004,7 +1004,7 @@ static struct miscdevice watchdog_miscdev = {
 	.fops		= &watchdog_fops,
 };
 
-static struct class watchdog_class = {
+static const struct class watchdog_class = {
 	.name =		"watchdog",
 	.dev_groups =	wdt_groups,
 };
@@ -1051,8 +1051,8 @@ static int watchdog_cdev_register(struct watchdog_device *wdd)
 	}
 
 	kthread_init_work(&wd_data->work, watchdog_ping_work);
-	hrtimer_init(&wd_data->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);
-	wd_data->timer.function = watchdog_timer_expired;
+	hrtimer_setup(&wd_data->timer, watchdog_timer_expired, CLOCK_MONOTONIC,
+		      HRTIMER_MODE_REL_HARD);
 	watchdog_hrtimer_pretimeout_init(wdd);
 
 	if (wdd->id == 0) {
@@ -1073,6 +1073,7 @@ static int watchdog_cdev_register(struct watchdog_device *wdd)
 
 	/* Fill in the data structures */
 	cdev_init(&wd_data->cdev, &watchdog_fops);
+	wd_data->cdev.owner = wdd->ops->owner;
 
 	/* Add the device */
 	err = cdev_device_add(&wd_data->cdev, &wd_data->dev);
@@ -1086,8 +1087,6 @@ static int watchdog_cdev_register(struct watchdog_device *wdd)
 		put_device(&wd_data->dev);
 		return err;
 	}
-
-	wd_data->cdev.owner = wdd->ops->owner;
 
 	/* Record time of most recent heartbeat as 'just before now'. */
 	wd_data->last_hw_keepalive = ktime_sub(ktime_get(), 1);
@@ -1230,7 +1229,7 @@ int __init watchdog_dev_init(void)
 {
 	int err;
 
-	watchdog_kworker = kthread_create_worker(0, "watchdogd");
+	watchdog_kworker = kthread_run_worker(0, "watchdogd");
 	if (IS_ERR(watchdog_kworker)) {
 		pr_err("Failed to create watchdog kworker\n");
 		return PTR_ERR(watchdog_kworker);

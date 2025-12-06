@@ -42,6 +42,7 @@ const unsigned int amdgpu_ctx_num_entities[AMDGPU_HW_IP_NUM] = {
 	[AMDGPU_HW_IP_VCN_DEC]	=	1,
 	[AMDGPU_HW_IP_VCN_ENC]	=	1,
 	[AMDGPU_HW_IP_VCN_JPEG]	=	1,
+	[AMDGPU_HW_IP_VPE]	=	1,
 };
 
 bool amdgpu_ctx_priority_is_valid(int32_t ctx_prio)
@@ -55,6 +56,10 @@ bool amdgpu_ctx_priority_is_valid(int32_t ctx_prio)
 		return true;
 	default:
 	case AMDGPU_CTX_PRIORITY_UNSET:
+		/* UNSET priority is not valid and we don't carry that
+		 * around, but set it to NORMAL in the only place this
+		 * function is called, amdgpu_ctx_ioctl().
+		 */
 		return false;
 	}
 }
@@ -68,10 +73,10 @@ amdgpu_ctx_to_drm_sched_prio(int32_t ctx_prio)
 		return DRM_SCHED_PRIORITY_NORMAL;
 
 	case AMDGPU_CTX_PRIORITY_VERY_LOW:
-		return DRM_SCHED_PRIORITY_MIN;
+		return DRM_SCHED_PRIORITY_LOW;
 
 	case AMDGPU_CTX_PRIORITY_LOW:
-		return DRM_SCHED_PRIORITY_MIN;
+		return DRM_SCHED_PRIORITY_LOW;
 
 	case AMDGPU_CTX_PRIORITY_NORMAL:
 		return DRM_SCHED_PRIORITY_NORMAL;
@@ -95,9 +100,6 @@ amdgpu_ctx_to_drm_sched_prio(int32_t ctx_prio)
 static int amdgpu_ctx_priority_permit(struct drm_file *filp,
 				      int32_t priority)
 {
-	if (!amdgpu_ctx_priority_is_valid(priority))
-		return -EINVAL;
-
 	/* NORMAL and below are accessible by everyone */
 	if (priority <= AMDGPU_CTX_PRIORITY_NORMAL)
 		return 0;
@@ -234,7 +236,7 @@ static int amdgpu_ctx_init_entity(struct amdgpu_ctx *ctx, u32 hw_ip,
 		r = amdgpu_xcp_select_scheds(adev, hw_ip, hw_prio, fpriv,
 						&num_scheds, &scheds);
 		if (r)
-			goto cleanup_entity;
+			goto error_free_entity;
 	}
 
 	/* disable load balance if the hw engine retains context among dependent jobs */
@@ -632,8 +634,6 @@ static int amdgpu_ctx_query2(struct amdgpu_device *adev,
 	return 0;
 }
 
-
-
 static int amdgpu_ctx_stable_pstate(struct amdgpu_device *adev,
 				    struct amdgpu_fpriv *fpriv, uint32_t id,
 				    bool set, u32 *stable_pstate)
@@ -676,23 +676,33 @@ int amdgpu_ctx_ioctl(struct drm_device *dev, void *data,
 	id = args->in.ctx_id;
 	priority = args->in.priority;
 
-	/* For backwards compatibility reasons, we need to accept
-	 * ioctls with garbage in the priority field */
+	/* For backwards compatibility, we need to accept ioctls with garbage
+	 * in the priority field. Garbage values in the priority field, result
+	 * in the priority being set to NORMAL.
+	 */
 	if (!amdgpu_ctx_priority_is_valid(priority))
 		priority = AMDGPU_CTX_PRIORITY_NORMAL;
 
 	switch (args->in.op) {
 	case AMDGPU_CTX_OP_ALLOC_CTX:
+		if (args->in.flags)
+			return -EINVAL;
 		r = amdgpu_ctx_alloc(adev, fpriv, filp, priority, &id);
 		args->out.alloc.ctx_id = id;
 		break;
 	case AMDGPU_CTX_OP_FREE_CTX:
+		if (args->in.flags)
+			return -EINVAL;
 		r = amdgpu_ctx_free(fpriv, id);
 		break;
 	case AMDGPU_CTX_OP_QUERY_STATE:
+		if (args->in.flags)
+			return -EINVAL;
 		r = amdgpu_ctx_query(adev, fpriv, id, &args->out);
 		break;
 	case AMDGPU_CTX_OP_QUERY_STATE2:
+		if (args->in.flags)
+			return -EINVAL;
 		r = amdgpu_ctx_query2(adev, fpriv, id, &args->out);
 		break;
 	case AMDGPU_CTX_OP_GET_STABLE_PSTATE:
@@ -909,7 +919,7 @@ long amdgpu_ctx_mgr_entity_flush(struct amdgpu_ctx_mgr *mgr, long timeout)
 	return timeout;
 }
 
-void amdgpu_ctx_mgr_entity_fini(struct amdgpu_ctx_mgr *mgr)
+static void amdgpu_ctx_mgr_entity_fini(struct amdgpu_ctx_mgr *mgr)
 {
 	struct amdgpu_ctx *ctx;
 	struct idr *idp;
@@ -934,24 +944,13 @@ void amdgpu_ctx_mgr_entity_fini(struct amdgpu_ctx_mgr *mgr)
 				drm_sched_entity_fini(entity);
 			}
 		}
+		kref_put(&ctx->refcount, amdgpu_ctx_fini);
 	}
 }
 
 void amdgpu_ctx_mgr_fini(struct amdgpu_ctx_mgr *mgr)
 {
-	struct amdgpu_ctx *ctx;
-	struct idr *idp;
-	uint32_t id;
-
 	amdgpu_ctx_mgr_entity_fini(mgr);
-
-	idp = &mgr->ctx_handles;
-
-	idr_for_each_entry(idp, ctx, id) {
-		if (kref_put(&ctx->refcount, amdgpu_ctx_fini) != 1)
-			DRM_ERROR("ctx %p is still alive\n", ctx);
-	}
-
 	idr_destroy(&mgr->ctx_handles);
 	mutex_destroy(&mgr->lock);
 }
