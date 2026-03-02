@@ -980,6 +980,10 @@
 	dai@120 {
 		reg = <TX_CODEC_DMA_TX_3>;
 	};
+
+	dai@104 {
+		reg = <DISPLAY_PORT_RX>;
+	};
 };
 
 &q6asmdai {
@@ -1119,6 +1123,23 @@
 		};
 		platform {
 			sound-dai = <&q6routing>;
+		};
+	};
+
+	dp-playback-dai-link {
+		link-name = "DisplayPort Playback";
+		no-pcm;
+
+		cpu {
+			sound-dai = <&q6afedai DISPLAY_PORT_RX>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			sound-dai = <&mdss_dp>;
 		};
 	};
 };
