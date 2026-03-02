@@ -17,7 +17,7 @@
 
 #define DRIVER_NAME		"sm8250"
 #define MI2S_BCLK_RATE		1536000
-#define TDM_BCLK_RATE		12288000 // SampleRate: 48kHz, SlotLength: 32bits, SlotNumber: 8
+#define TDM_BCLK_RATE		12288000
 
 static unsigned int tdm_slot_offset[8] = { 0, 4, 8, 12, 16, 20, 24, 28 };
 
@@ -48,7 +48,6 @@ static int sm8250_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
-
 	int ret = 0;
 	int channels, slots, slot_width;
 
@@ -57,43 +56,28 @@ static int sm8250_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 	slot_width = 32;
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		ret = snd_soc_dai_set_tdm_slot(cpu_dai, 0, 0x0f, slots,
-					       slot_width);
+		ret = snd_soc_dai_set_tdm_slot(cpu_dai, 0, 0x0f, slots, slot_width);
 		if (ret < 0) {
-			dev_err(rtd->dev,
-				"%s: failed to set tdm slot, err:%d\n",
-				__func__, ret);
+			dev_err(rtd->dev, "%s: failed to set tdm slot, err:%d\n", __func__, ret);
 			goto end;
 		}
-
-		ret = snd_soc_dai_set_channel_map(cpu_dai, 0, NULL, channels,
-						  tdm_slot_offset);
+		ret = snd_soc_dai_set_channel_map(cpu_dai, 0, NULL, channels, tdm_slot_offset);
 		if (ret < 0) {
-			dev_err(rtd->dev,
-				"%s: failed to set channel map, err:%d\n",
-				__func__, ret);
+			dev_err(rtd->dev, "%s: failed to set channel map, err:%d\n", __func__, ret);
 			goto end;
 		}
 	} else {
-		ret = snd_soc_dai_set_tdm_slot(cpu_dai, 0xf, 0, slots,
-					       slot_width);
+		ret = snd_soc_dai_set_tdm_slot(cpu_dai, 0xf, 0, slots, slot_width);
 		if (ret < 0) {
-			dev_err(rtd->dev,
-				"%s: failed to set tdm slot, err:%d\n",
-				__func__, ret);
+			dev_err(rtd->dev, "%s: failed to set tdm slot, err:%d\n", __func__, ret);
 			goto end;
 		}
-
-		ret = snd_soc_dai_set_channel_map(cpu_dai, channels,
-						  tdm_slot_offset, 0, NULL);
+		ret = snd_soc_dai_set_channel_map(cpu_dai, channels, tdm_slot_offset, 0, NULL);
 		if (ret < 0) {
-			dev_err(rtd->dev,
-				"%s: failed to set channel map, err:%d\n",
-				__func__, ret);
+			dev_err(rtd->dev, "%s: failed to set channel map, err:%d\n", __func__, ret);
 			goto end;
 		}
 	}
-
 end:
 	return ret;
 }
@@ -101,15 +85,19 @@ end:
 static int sm8250_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 				     struct snd_pcm_hw_params *params)
 {
-	struct snd_interval *rate = hw_param_interval(params,
-					SNDRV_PCM_HW_PARAM_RATE);
-	struct snd_interval *channels = hw_param_interval(params,
-					SNDRV_PCM_HW_PARAM_CHANNELS);
+	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
+	struct snd_interval *rate = hw_param_interval(params, SNDRV_PCM_HW_PARAM_RATE);
+	struct snd_interval *channels = hw_param_interval(params, SNDRV_PCM_HW_PARAM_CHANNELS);
 	struct snd_mask *fmt = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
 
 	rate->min = rate->max = 48000;
-	channels->min = channels->max = 4;
 	snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S16_LE);
+
+	/* DP codec is stereo only - don't force 4ch on it */
+	if (cpu_dai->id == DISPLAY_PORT_RX_0)
+		channels->min = channels->max = 2;
+	else
+		channels->min = channels->max = 4;
 
 	return 0;
 }
@@ -124,48 +112,44 @@ static int sm8250_snd_startup(struct snd_pcm_substream *substream)
 	int ret, j;
 
 	switch (cpu_dai->id) {
+	case DISPLAY_PORT_RX_0:
+		/* DP has no SoundWire - skip SDW startup entirely */
+		return 0;
 	case PRIMARY_MI2S_RX:
 		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_I2S;
-		snd_soc_dai_set_sysclk(cpu_dai,
-			Q6AFE_LPASS_CLK_ID_PRI_MI2S_IBIT,
-			MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+		snd_soc_dai_set_sysclk(cpu_dai, Q6AFE_LPASS_CLK_ID_PRI_MI2S_IBIT,
+				       MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
 		snd_soc_dai_set_fmt(cpu_dai, fmt);
 		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
 		break;
 	case SECONDARY_MI2S_RX:
 		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_I2S;
-		snd_soc_dai_set_sysclk(cpu_dai,
-			Q6AFE_LPASS_CLK_ID_SEC_MI2S_IBIT,
-			MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+		snd_soc_dai_set_sysclk(cpu_dai, Q6AFE_LPASS_CLK_ID_SEC_MI2S_IBIT,
+				       MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
 		snd_soc_dai_set_fmt(cpu_dai, fmt);
 		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
 		break;
 	case TERTIARY_MI2S_RX:
 		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_I2S;
-		snd_soc_dai_set_sysclk(cpu_dai,
-			Q6AFE_LPASS_CLK_ID_TER_MI2S_IBIT,
-			MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+		snd_soc_dai_set_sysclk(cpu_dai, Q6AFE_LPASS_CLK_ID_TER_MI2S_IBIT,
+				       MI2S_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
 		snd_soc_dai_set_fmt(cpu_dai, fmt);
 		snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
 		break;
 	case TERTIARY_TDM_RX_0:
 		codec_dai_fmt |= SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_DSP_A;
-		snd_soc_dai_set_sysclk(cpu_dai,
-			Q6AFE_LPASS_CLK_ID_TER_TDM_IBIT,
-			TDM_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK); //faulty rate: 11289600
-
+		snd_soc_dai_set_sysclk(cpu_dai, Q6AFE_LPASS_CLK_ID_TER_TDM_IBIT,
+				       TDM_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
 		for_each_rtd_codec_dais(rtd, j, codec_dai) {
 			ret = snd_soc_dai_set_fmt(codec_dai, codec_dai_fmt);
-			snd_soc_dai_set_sysclk(codec_dai,
-				0,
-				TDM_BCLK_RATE, SNDRV_PCM_STREAM_PLAYBACK);
+			snd_soc_dai_set_sysclk(codec_dai, 0, TDM_BCLK_RATE,
+					       SNDRV_PCM_STREAM_PLAYBACK);
 			if (ret < 0) {
 				dev_err(rtd->dev, "TDM fmt err:%d\n", ret);
 				return ret;
 			}
 		}
 		break;
-
 	default:
 		break;
 	}
@@ -178,8 +162,13 @@ static void sm8250_snd_shutdown(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct sm8250_snd_data *data = snd_soc_card_get_drvdata(rtd->card);
-	struct sdw_stream_runtime *sruntime = data->sruntime[cpu_dai->id];
+	struct sdw_stream_runtime *sruntime;
 
+	/* DP has no SoundWire stream - nothing to release */
+	if (cpu_dai->id == DISPLAY_PORT_RX_0)
+		return;
+
+	sruntime = data->sruntime[cpu_dai->id];
 	data->sruntime[cpu_dai->id] = NULL;
 	sdw_release_stream(sruntime);
 }
@@ -190,6 +179,10 @@ static int sm8250_snd_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct sm8250_snd_data *pdata = snd_soc_card_get_drvdata(rtd->card);
+
+	/* DP has no SoundWire */
+	if (cpu_dai->id == DISPLAY_PORT_RX_0)
+		return 0;
 
 	switch (cpu_dai->id) {
 	case PRIMARY_TDM_RX_0 ... QUINARY_TDM_TX_7:
@@ -204,8 +197,13 @@ static int sm8250_snd_prepare(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct sm8250_snd_data *data = snd_soc_card_get_drvdata(rtd->card);
-	struct sdw_stream_runtime *sruntime = data->sruntime[cpu_dai->id];
+	struct sdw_stream_runtime *sruntime;
 
+	/* DP has no SoundWire */
+	if (cpu_dai->id == DISPLAY_PORT_RX_0)
+		return 0;
+
+	sruntime = data->sruntime[cpu_dai->id];
 	return qcom_snd_sdw_prepare(substream, sruntime,
 				    &data->stream_prepared[cpu_dai->id]);
 }
@@ -215,8 +213,13 @@ static int sm8250_snd_hw_free(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct sm8250_snd_data *data = snd_soc_card_get_drvdata(rtd->card);
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
-	struct sdw_stream_runtime *sruntime = data->sruntime[cpu_dai->id];
+	struct sdw_stream_runtime *sruntime;
 
+	/* DP has no SoundWire */
+	if (cpu_dai->id == DISPLAY_PORT_RX_0)
+		return 0;
+
+	sruntime = data->sruntime[cpu_dai->id];
 	return qcom_snd_sdw_hw_free(substream, sruntime,
 				    &data->stream_prepared[cpu_dai->id]);
 }
@@ -255,7 +258,6 @@ static int sm8250_platform_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	card->owner = THIS_MODULE;
-	/* Allocate the private data */
 	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
