@@ -43,6 +43,24 @@ struct panel_desc {
 	int (*init_sequence)(struct nt36532 *ctx);
 };
 
+#define NT36532_HDISPLAY	1800
+#define NT36532_HFP		200
+#define NT36532_HSW		4
+#define NT36532_HBP		92
+#define NT36532_HTOTAL		(NT36532_HDISPLAY + NT36532_HFP + NT36532_HSW + NT36532_HBP)
+
+#define NT36532_VDISPLAY	2880
+#define NT36532_VFP_120		26
+#define NT36532_VSW		2
+#define NT36532_VBP		214
+#define NT36532_VTOTAL_120	(NT36532_VDISPLAY + NT36532_VFP_120 + NT36532_VSW + NT36532_VBP)
+/*
+ * Vendor m82 panel uses immediate-VFP DFPS: keep the 120 Hz link clock and
+ * double the frame time for 60 Hz by inflating VFP by one 120 Hz vtotal.
+ */
+#define NT36532_VFP_60		(NT36532_VFP_120 + NT36532_VTOTAL_120)
+#define NT36532_VTOTAL_60	(NT36532_VDISPLAY + NT36532_VFP_60 + NT36532_VSW + NT36532_VBP)
+
 static void nt36532_reset(struct nt36532 *ctx)
 {
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
@@ -313,15 +331,30 @@ static int pipa_init_sequence(struct nt36532 *ctx)
 }
 
 static const struct drm_display_mode nt36532_mode_120 = {
-	.clock = (1800 + 200 + 4 + 92) * (2880 + 26 + 2 + 214) * 120 / 1000,
-	.hdisplay = 1800,
-	.hsync_start = 1800 + 200,
-	.hsync_end = 1800 + 200 + 4,
-	.htotal = 1800 + 200 + 4 + 92,
-	.vdisplay = 2880,
-	.vsync_start = 2880 + 26,
-	.vsync_end = 2880 + 26 + 2,
-	.vtotal = 2880 + 26 + 2 + 214,
+	.clock = NT36532_HTOTAL * NT36532_VTOTAL_120 * 120 / 1000,
+	.hdisplay = NT36532_HDISPLAY,
+	.hsync_start = NT36532_HDISPLAY + NT36532_HFP,
+	.hsync_end = NT36532_HDISPLAY + NT36532_HFP + NT36532_HSW,
+	.htotal = NT36532_HTOTAL,
+	.vdisplay = NT36532_VDISPLAY,
+	.vsync_start = NT36532_VDISPLAY + NT36532_VFP_120,
+	.vsync_end = NT36532_VDISPLAY + NT36532_VFP_120 + NT36532_VSW,
+	.vtotal = NT36532_VTOTAL_120,
+	.width_mm = 148,
+	.height_mm = 237,
+	.type = DRM_MODE_TYPE_DRIVER,
+};
+
+static const struct drm_display_mode nt36532_mode_60 = {
+	.clock = NT36532_HTOTAL * NT36532_VTOTAL_60 * 60 / 1000,
+	.hdisplay = NT36532_HDISPLAY,
+	.hsync_start = NT36532_HDISPLAY + NT36532_HFP,
+	.hsync_end = NT36532_HDISPLAY + NT36532_HFP + NT36532_HSW,
+	.htotal = NT36532_HTOTAL,
+	.vdisplay = NT36532_VDISPLAY,
+	.vsync_start = NT36532_VDISPLAY + NT36532_VFP_60,
+	.vsync_end = NT36532_VDISPLAY + NT36532_VFP_60 + NT36532_VSW,
+	.vtotal = NT36532_VTOTAL_60,
 	.width_mm = 148,
 	.height_mm = 237,
 	.type = DRM_MODE_TYPE_DRIVER,
@@ -410,11 +443,6 @@ static int nt36532_prepare(struct drm_panel *panel)
 	msleep(120);
 
 	return 0;
-
-fail:
-	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-	regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
-	return ret;
 }
 
 static int nt36532_enable(struct drm_panel *panel)
@@ -477,11 +505,31 @@ static int nt36532_unprepare(struct drm_panel *panel)
 }
 
 static int nt36532_get_modes(struct drm_panel *panel,
-					struct drm_connector *connector)
+			     struct drm_connector *connector)
 {
-	const struct drm_display_mode *mode;
-	mode = &nt36532_mode_120;
-	return drm_connector_helper_get_modes_fixed(connector, mode);
+	static const struct drm_display_mode * const modes[] = {
+		&nt36532_mode_120,
+		&nt36532_mode_60,
+	};
+	struct drm_display_mode *mode;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(modes); i++) {
+		mode = drm_mode_duplicate(connector->dev, modes[i]);
+		if (!mode)
+			return i;
+
+		if (i == 0)
+			mode->type |= DRM_MODE_TYPE_PREFERRED;
+
+		drm_mode_set_name(mode);
+		drm_mode_probed_add(connector, mode);
+	}
+
+	connector->display_info.width_mm = nt36532_mode_120.width_mm;
+	connector->display_info.height_mm = nt36532_mode_120.height_mm;
+
+	return ARRAY_SIZE(modes);
 }
 
 static const struct drm_panel_funcs nt36532_panel_funcs = {

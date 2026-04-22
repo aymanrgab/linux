@@ -194,6 +194,44 @@ static int panel_bridge_get_modes(struct drm_bridge *bridge,
 	return drm_panel_get_modes(panel_bridge->panel, connector);
 }
 
+static bool panel_bridge_has_mode(struct panel_bridge *panel_bridge,
+				  const struct drm_display_mode *mode,
+				  const struct list_head *modes)
+{
+	struct drm_display_mode *panel_mode;
+
+	list_for_each_entry(panel_mode, modes, head) {
+		/*
+		 * Reject synthetic cmdline/user modes. Fixed-panel bridges
+		 * should only accept modes exposed by the panel driver itself.
+		 */
+		if (!(panel_mode->type & DRM_MODE_TYPE_DRIVER) &&
+		    (panel_mode->type & DRM_MODE_TYPE_USERDEF))
+			continue;
+
+		if (drm_mode_equal(panel_mode, mode))
+			return true;
+	}
+
+	return false;
+}
+
+static enum drm_mode_status
+panel_bridge_mode_valid(struct drm_bridge *bridge,
+			const struct drm_display_info *info,
+			const struct drm_display_mode *mode)
+{
+	struct panel_bridge *panel_bridge = drm_bridge_to_panel_bridge(bridge);
+
+	if (panel_bridge_has_mode(panel_bridge, mode,
+				  &panel_bridge->connector.probed_modes) ||
+	    panel_bridge_has_mode(panel_bridge, mode,
+				  &panel_bridge->connector.modes))
+		return MODE_OK;
+
+	return MODE_PANEL;
+}
+
 static void panel_bridge_debugfs_init(struct drm_bridge *bridge,
 				      struct dentry *root)
 {
@@ -213,6 +251,7 @@ static const struct drm_bridge_funcs panel_bridge_bridge_funcs = {
 	.atomic_disable = panel_bridge_atomic_disable,
 	.atomic_post_disable = panel_bridge_atomic_post_disable,
 	.get_modes = panel_bridge_get_modes,
+	.mode_valid = panel_bridge_mode_valid,
 	.atomic_reset = drm_atomic_helper_bridge_reset,
 	.atomic_duplicate_state = drm_atomic_helper_bridge_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_bridge_destroy_state,
