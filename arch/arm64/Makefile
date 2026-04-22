@@ -217,11 +217,16 @@ vdso-install-$(CONFIG_COMPAT_VDSO)	+= arch/arm64/kernel/vdso32/vdso32.so.dbg
 
 include $(srctree)/scripts/Makefile.defconf
 
+PHONY += sm8250config
+sm8250config:
+	$(call merge_into_defconfig_override,defconfig,sm8250)
+
 PHONY += virtconfig
 virtconfig:
 	$(call merge_into_defconfig_override,defconfig,virt)
 
 define archhelp
+  echo  '  sm8250config   - Build .config from defconfig + arm64 SM8250 fragment'
   echo  '* Image.gz      - Compressed kernel image (arch/$(ARCH)/boot/Image.gz)'
   echo  '  Image         - Uncompressed kernel image (arch/$(ARCH)/boot/Image)'
   echo  '  image.fit     - Flat Image Tree (arch/$(ARCH)/boot/image.fit)'
