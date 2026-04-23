@@ -123,6 +123,21 @@
 		vin-supply = <&vreg_bob>;
 	};
 
+	camera_front_vana: camera-front-vana-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "camera_front_vana";
+
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+
+		regulator-enable-ramp-delay = <135>;
+
+		enable-active-high;
+		gpio = <&tlmm 84 GPIO_ACTIVE_HIGH>;
+
+		vin-supply = <&vreg_bob>;
+	};
+
 	gpio_keys: gpio-keys {
 		compatible = "gpio-keys";
 
@@ -595,6 +610,15 @@
 				remote-endpoint = <&camera_ov13b10_ep>;
 			};
 		};
+
+		port@4 {
+			csiphy4_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				remote-endpoint = <&camera_hi846_ep>;
+			};
+		};
 	};
 };
 
@@ -627,6 +651,41 @@
 				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
 				link-frequencies = /bits/ 64 <560000000>;
 				remote-endpoint = <&csiphy1_ep>;
+			};
+		};
+	};
+};
+
+&cci1 {
+	status = "okay";
+};
+
+&cci1_i2c1 {
+	camera_front: camera@20 {
+		compatible = "hynix,hi846";
+		reg = <0x20>;
+
+		vdda-supply = <&camera_front_vana>;
+		vddd-supply = <&vreg_l3c_1p2>;
+		vddio-supply = <&vreg_l1c_1p8>;
+
+		clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		assigned-clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		assigned-clock-rates = <19200000>;
+		clock-frequency = <19200000>;
+
+		reset-gpios = <&tlmm 109 GPIO_ACTIVE_LOW>;
+		pinctrl-0 = <&mclk3_active>;
+		pinctrl-names = "default";
+
+		orientation = <0>;
+
+		port {
+			camera_hi846_ep: endpoint {
+				data-lanes = <1 2 3 4>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				link-frequencies = /bits/ 64 <80000000 200000000>;
+				remote-endpoint = <&csiphy4_ep>;
 			};
 		};
 	};
@@ -1357,6 +1416,13 @@
 		function = "gpio";
 		drive-strength = <2>;
 		bias-pull-up;
+	};
+
+	mclk3_active: mclk3-active-state {
+		pins = "gpio97";
+		function = "cam_mclk";
+		bias-disable;
+		drive-strength = <2>;
 	};
 
 	mclk0_active: mclk0-active-state {
