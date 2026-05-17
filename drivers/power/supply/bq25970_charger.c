@@ -20,6 +20,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/power_supply.h>
+#include <linux/unaligned.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -57,6 +58,8 @@ enum {
 	ADC_TDIE,
 	ADC_MAX_NUM,
 };
+
+#define BQ2597X_CURRENT_LIMIT_MAX_UA	5000000
 
 #define BQ25970_ROLE_STDALONE   0
 #define BQ25970_ROLE_SLAVE	1
@@ -299,6 +302,7 @@ struct bq2597x {
 
 	int chg_ma;
 	int chg_mv;
+	int charge_current_limit_ua;
 
 	int charge_state;
 
@@ -969,6 +973,28 @@ static int bq2597x_set_adc_bits(struct bq2597x *bq, int bits)
 }
 
 #define ADC_REG_BASE 0x16
+static int bq2597x_get_adc_data(struct bq2597x *bq, int channel, int *result)
+{
+	u8 data[2];
+	int ret;
+
+	if (channel < 0 || channel >= ADC_MAX_NUM)
+		return -EINVAL;
+
+	ret = bq2597x_read_byte(bq, ADC_REG_BASE + (channel << 1), &data[0]);
+	if (ret)
+		return ret;
+
+	ret = bq2597x_read_byte(bq, ADC_REG_BASE + (channel << 1) + 1,
+				&data[1]);
+	if (ret)
+		return ret;
+
+	*result = (s16)get_unaligned_be16(data);
+
+	return 0;
+}
+
 static int bq2597x_set_adc_scan(struct bq2597x *bq, int channel, bool enable)
 {
 	int ret;
@@ -1433,7 +1459,7 @@ static int bq2597x_init_adc(struct bq2597x *bq)
 	bq2597x_set_adc_scan(bq, ADC_IBAT, false);
 	bq2597x_set_adc_scan(bq, ADC_TBUS, false);
 	bq2597x_set_adc_scan(bq, ADC_TBAT, false);
-	bq2597x_set_adc_scan(bq, ADC_TDIE, false);
+	bq2597x_set_adc_scan(bq, ADC_TDIE, true);
 	bq2597x_set_adc_scan(bq, ADC_VAC, true);
 
 	if (bq->chip_vendor == SC8551)
@@ -1518,6 +1544,26 @@ static int bq2597x_set_present(struct bq2597x *bq, bool present)
         bq->usb_present = present;
     }
 
+	return 0;
+}
+
+static int bq2597x_set_charge_current_limit(struct bq2597x *bq, int limit_ua)
+{
+	int limit_ma, alarm_ma, ret;
+
+	limit_ua = clamp(limit_ua, 0, BQ2597X_CURRENT_LIMIT_MAX_UA);
+	limit_ma = DIV_ROUND_CLOSEST(limit_ua, 1000);
+	alarm_ma = max(limit_ma - 500, BQ2597X_BAT_OCP_ALM_BASE);
+
+	ret = bq2597x_set_batocp_th(bq, limit_ma);
+	if (ret)
+		return ret;
+
+	ret = bq2597x_set_batocp_alarm_th(bq, alarm_ma);
+	if (ret)
+		return ret;
+
+	bq->charge_current_limit_ua = limit_ua;
 	return 0;
 }
 
@@ -1627,6 +1673,13 @@ static const struct attribute_group bq2597x_attr_group = {
 static enum power_supply_property bq2597x_charger_props[] = {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT,
+	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX,
+	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_TEMP,
+	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 };
 static void bq2597x_check_fault_status(struct bq2597x *bq);
@@ -1637,15 +1690,62 @@ static int bq2597x_charger_get_property(struct power_supply *psy,
 {
 	struct bq2597x *bq = power_supply_get_drvdata(psy);
 	bool result;
+	int adc;
 	int ret;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
 		bq2597x_check_charge_enabled(bq, &result);
-		val->intval = result;
+		val->intval = result ? POWER_SUPPLY_STATUS_CHARGING :
+			POWER_SUPPLY_STATUS_NOT_CHARGING;
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:
 		val->intval = bq->usb_present;
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
+		ret = bq2597x_check_charge_enabled(bq, &result);
+		if (ret)
+			return ret;
+		val->intval = result;
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX:
+		val->intval = 1;
+		break;
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+		val->intval = bq->charge_current_limit_ua;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		ret = bq2597x_get_adc_data(bq, ADC_VBUS, &adc);
+		if (ret)
+			return ret;
+		bq->vbus_volt = adc;
+		val->intval = adc * 1000;
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		ret = bq2597x_get_adc_data(bq, ADC_IBUS, &adc);
+		if (ret)
+			return ret;
+		bq->ibus_curr = adc;
+		val->intval = adc * 1000;
+		break;
+	case POWER_SUPPLY_PROP_TEMP:
+		ret = bq2597x_get_adc_data(bq, ADC_TDIE, &adc);
+		if (ret)
+			return ret;
+		bq->die_temp = adc;
+		val->intval = adc * 10;
+		break;
+	case POWER_SUPPLY_PROP_HEALTH:
+		bq2597x_check_fault_status(bq);
+		if (bq->bat_therm_fault || bq->bus_therm_fault ||
+		    bq->die_therm_fault)
+			val->intval = POWER_SUPPLY_HEALTH_OVERHEAT;
+		else if (bq->bat_ovp_fault || bq->bus_ovp_fault)
+			val->intval = POWER_SUPPLY_HEALTH_OVERVOLTAGE;
+		else if (bq->bat_ocp_fault || bq->bus_ocp_fault)
+			val->intval = POWER_SUPPLY_HEALTH_OVERCURRENT;
+		else
+			val->intval = POWER_SUPPLY_HEALTH_GOOD;
 		break;
 	case POWER_SUPPLY_PROP_MODEL_NAME:
 		ret = bq2597x_get_work_mode(bq, &bq->mode);
@@ -1673,10 +1773,22 @@ static int bq2597x_charger_set_property(struct power_supply *psy,
 				       const union power_supply_propval *val)
 {
 	struct bq2597x *bq = power_supply_get_drvdata(psy);
+	int ret;
 
 	switch (prop) {
 	case POWER_SUPPLY_PROP_PRESENT:
 		bq2597x_set_present(bq, !!val->intval);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
+		ret = bq2597x_enable_charge(bq, !!val->intval);
+		if (ret)
+			return ret;
+		bq2597x_check_charge_enabled(bq, &bq->charge_enabled);
+		break;
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+		ret = bq2597x_set_charge_current_limit(bq, val->intval);
+		if (ret)
+			return ret;
 		break;
 	default:
 		return -EINVAL;
@@ -1691,10 +1803,10 @@ static int bq2597x_charger_is_writeable(struct power_supply *psy,
 	int ret;
 
 	switch (prop) {
-	//case POWER_SUPPLY_PROP_CHARGING_ENABLED:
-	//case POWER_SUPPLY_PROP_TI_SET_BUS_PROTECTION_FOR_QC3:
-	//	ret = 1;
-	//	break;
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+		ret = 1;
+		break;
 	default:
 		ret = 0;
 		break;
@@ -1754,11 +1866,11 @@ static void bq2597x_check_fault_status(struct bq2597x *bq)
 
 	ret = bq2597x_read_byte(bq, BQ2597X_REG_10, &stat);
 	if (ret)
-		return;
+		goto unlock;
 
 	ret = bq2597x_read_byte(bq, BQ2597X_REG_11, &flag);
 	if (ret)
-		return;
+		goto unlock;
 
 	if (flag != bq->prev_fault) {
 		changed = true;
@@ -1782,6 +1894,7 @@ static void bq2597x_check_fault_status(struct bq2597x *bq)
 		}
 	}
 
+unlock:
 	mutex_unlock(&bq->data_lock);
 }
 
@@ -1914,16 +2027,6 @@ static int bq2597x_notifier_call(struct notifier_block *nb,
         chip->usb_present = !!propval.intval;
 
 		power_supply_changed(chip->fc2_psy);
-
-        if (chip->usb_present) {
-            msleep(100);
-			bq2597x_enable_charge(chip, true);
-			bq2597x_check_charge_enabled(chip, &chip->charge_enabled);
-        }
-        else {
-			bq2597x_enable_charge(chip, false);
-			bq2597x_check_charge_enabled(chip, &chip->charge_enabled);
-        }
 	}
 
 	return NOTIFY_OK;
@@ -1983,6 +2086,10 @@ static int bq2597x_charger_probe(struct i2c_client *client)
 	}
 
 	determine_initial_status(bq);
+
+	bq2597x_enable_charge(bq, false);
+	bq2597x_check_charge_enabled(bq, &bq->charge_enabled);
+	bq2597x_set_charge_current_limit(bq, BQ2597X_CURRENT_LIMIT_MAX_UA);
 
 	ret = bq2597x_psy_register(bq);
 	if (ret)
@@ -2097,6 +2204,9 @@ static int bq2597x_resume(struct device *dev)
 static void bq2597x_charger_remove(struct i2c_client *client)
 {
 	struct bq2597x *bq = i2c_get_clientdata(client);
+
+	if (bq->nb.notifier_call)
+		power_supply_unreg_notifier(&bq->nb);
 
 	bq2597x_enable_adc(bq, false);
 
