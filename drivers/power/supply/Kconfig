@@ -334,6 +334,14 @@ config BATTERY_BQ27XXX_DT_UPDATES_NVM
 	  general-purpose kernels, as this can cause misconfiguration of a
 	  smart battery with embedded NVM/flash.
 
+config DUAL_FUEL_GAUGE
+	tristate "Xiaomi dual fuel gauge aggregator"
+	depends on OF
+	help
+	  Say Y here to expose two fuel-gauge power supplies as one battery.
+	  This is used by Xiaomi pipa, whose pack is monitored by a pair of
+	  BQ27z561 gauges.
+
 config BATTERY_DA9030
 	tristate "DA9030 battery driver"
 	depends on PMIC_DA903X
