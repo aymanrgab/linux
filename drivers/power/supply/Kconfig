@@ -825,6 +825,18 @@ config CHARGER_BQ25970
 	  Say Y to enable support for the TI BQ25970, BQ25971
 	  series of fast battery chargers.
 
+config XIAOMI_PD_POLICY_PIPA
+	tristate "Xiaomi Pad 6 USB PD/PPS charging policy"
+	depends on OF
+	depends on TYPEC_TCPM
+	depends on CHARGER_BQ25970
+	depends on BATTERY_BQ27XXX_I2C
+	depends on DUAL_FUEL_GAUGE
+	help
+	  Say Y here to enable the kernel-side PD/PPS policy manager for
+	  Xiaomi Pad 6 (pipa).  The driver negotiates a capped PPS contract
+	  and controls the BQ2597x charge pump without a userspace daemon.
+
 config CHARGER_BQ25980
 	tristate "TI BQ25980 battery charger driver"
 	depends on I2C
