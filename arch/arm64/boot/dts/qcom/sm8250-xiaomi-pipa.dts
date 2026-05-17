@@ -63,7 +63,26 @@
 		charge-full-design-microamp-hours = <8840000>;
 		energy-full-design-microwatt-hours = <34300000>;
 		voltage-min-design-microvolt = <3400000>;
-		voltage-max-design-microvolt = <4370000>;
+		voltage-max-design-microvolt = <4460000>;
+	};
+
+	dual_fuelgauge: dual-fuelgauge {
+		compatible = "xiaomi,dual-fuelgauge";
+		master-fuel-gauge = <&bq27z561_master>;
+		slave-fuel-gauge = <&bq27z561_slave>;
+	};
+
+	pd_policy_manager: pd-policy-manager {
+		compatible = "xiaomi,usbpd-pm-pipa";
+		usbpd-source = <&pm8150b_typec>;
+		charge-pump = <&bq2597x_standalone>;
+		fuel-gauge = <&dual_fuelgauge>;
+		main-charger = <&pm8150b_charger>;
+		mi,pd-power-max-uw = <25000000>;
+		mi,pd-bat-curr-max-ua = <5000000>;
+		mi,pd-bus-volt-min-uv = <10000000>;
+		mi,pd-bus-volt-max-uv = <11000000>;
+		mi,pd-bus-curr-max-ua = <2500000>;
 	};
 
 	bl_vddpos_5p5: bl-vddpos-regulator {
@@ -948,10 +967,33 @@
 	};
 };
 
+&i2c0 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	bq27z561_slave: fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		monitored-battery = <&battery>;
+	};
+};
+
+&i2c13 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	bq27z561_master: fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		monitored-battery = <&battery>;
+	};
+};
+
 &i2c16 {
 	clock-frequency = <400000>;
 	status = "okay";
-	bq2597x-standalone@66 {
+
+	bq2597x_standalone: bq2597x-standalone@66 {
 		compatible = "ti,bq2597x-standalone";
 		reg = <0x66>;
 		interrupt-parent = <&tlmm>;
@@ -1251,7 +1293,7 @@
 
 	vdd-pdphy-supply = <&vreg_l2a_3p1>;
 
-	connector {
+	pm8150b_typec_connector: connector {
 		compatible = "usb-c-connector";
 
 		power-role = "dual";
@@ -1259,7 +1301,7 @@
 		try-power-role = "sink";
 		self-powered;
 
-		op-sink-microwatt = <15000000>;
+		op-sink-microwatt = <25000000>;
 
 		source-pdos = <PDO_FIXED(5000, 3000,
 					  PDO_FIXED_DUAL_ROLE |
@@ -1270,7 +1312,8 @@
 				       PDO_FIXED_DUAL_ROLE |
 				       PDO_FIXED_USB_COMM |
 				       PDO_FIXED_DATA_SWAP)
-				       PDO_VAR(5000, 9000, 5000)>;
+				       PDO_VAR(5000, 9000, 5000)
+				       PDO_PPS_APDO(5000, 11000, 2500)>;
 
 		altmodes {
 			displayport {
