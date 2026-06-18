@@ -878,7 +878,7 @@ Description:
 return:
 	n.a.
 *******************************************************/
-void Boot_Update_Firmware(struct work_struct *work)
+static void Boot_Update_Firmware(struct work_struct *work)
 {
 //	nvt_match_fw();
 	mutex_lock(&ts->lock);
