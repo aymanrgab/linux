@@ -101,6 +101,8 @@ struct qcom_fg_chip {
 	spinlock_t sram_request_lock;
 	spinlock_t sram_rw_lock;
 	int sram_requests;
+
+	bool vbatt_low;
 };
 
 /************************
@@ -919,6 +921,22 @@ static int qcom_fg_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		ret = chip->ops->get_capacity(chip, &val->intval);
+		if (!ret) {
+			if (val->intval <= 1)
+				chip->vbatt_low = true;
+			else
+				chip->vbatt_low = false;
+		}
+		if (!ret && chip->vbatt_low) {
+			int vbatt = 0;
+			/* Stuck-at-1% fix: if voltage recovered above 3700mV,
+			 * the FG reading is stale — clamp to 2% */
+			if (chip->ops->get_voltage(chip, &vbatt) == 0 &&
+			    vbatt > 3700000) {
+				chip->vbatt_low = false;
+				val->intval = 2;
+			}
+		}
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		ret = chip->ops->get_current(chip, &val->intval);
